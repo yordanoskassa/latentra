@@ -1,0 +1,387 @@
+import path from 'path'
+import { app } from 'electron'
+import { LLMConfigManager, type PerformanceProfile } from './llm-config.js'
+
+export class LLMService {
+  private llama: any = null
+  private model: any = null
+  private context: any = null
+  private session: any = null
+  private isInitialized = false
+  private modelPath: string | null = null
+  private performanceProfile: PerformanceProfile = 'auto'
+  // Concurrency controls
+  private initPromise: Promise<void> | null = null
+  private reinitInProgress = false
+  private chatLock: Promise<any> = Promise.resolve()
+
+  async findAvailableModel(): Promise<string | null> {
+    try {
+      const { existsSync, readdirSync } = await import('fs')
+      const modelsDir = path.join(app.getPath('userData'), 'models')
+      console.log('Looking for models in:', modelsDir)
+      
+      // Create models directory if it doesn't exist
+      if (!existsSync(modelsDir)) {
+        const { mkdirSync } = await import('fs')
+        mkdirSync(modelsDir, { recursive: true })
+        return null
+      }
+      
+      // List of preferred models in order of preference (fastest/smallest first for quick testing)
+      const preferredModels = [
+        'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',   // Fast and small for testing
+        'qwen2.5-0.5b-instruct-q4.gguf',
+        'llama-3.2-1b-instruct-q4.gguf',
+        'phi-3-mini-4k-instruct-q4.gguf',
+        'llama-3.2-3b-instruct-q4.gguf',
+        'mistral-7b-instruct-v0.2.Q4_K_M.gguf',   // Larger but better quality
+        'codellama-7b-instruct.Q4_K_M.gguf'
+      ]
+      
+      // Check for preferred models first
+      for (const modelFile of preferredModels) {
+        const modelPath = path.join(modelsDir, modelFile)
+        if (existsSync(modelPath)) {
+          console.log(`Found preferred model: ${modelFile}`)
+          return modelPath
+        }
+      }
+      
+      // If no preferred model found, look for any .gguf file
+      try {
+        const files = readdirSync(modelsDir)
+        const ggufFiles = files.filter(file => file.endsWith('.gguf'))
+        
+        if (ggufFiles.length > 0) {
+          const modelPath = path.join(modelsDir, ggufFiles[0])
+          console.log(`Found GGUF model: ${ggufFiles[0]}`)
+          return modelPath
+        }
+      } catch (error) {
+        console.log('Error reading models directory:', error)
+      }
+      
+      return null
+    } catch (error) {
+      console.error('Error finding available model:', error)
+      return null
+    }
+  }
+
+  async initialize() {
+    // Coalesce concurrent initialize() calls
+    if (this.isInitialized && this.session) {
+      return
+    }
+    if (this.initPromise) {
+      return this.initPromise
+    }
+    this.initPromise = (async () => {
+      try {
+        console.log('Initializing LLM service...')
+        
+        // Find available model
+        this.modelPath = await this.findAvailableModel()
+        
+        if (!this.modelPath) {
+          throw new Error('No GGUF model found in models directory. Please download a model first.')
+        }
+        
+        console.log('Loading model from:', this.modelPath)
+        
+        // Dynamic import of node-llama-cpp
+        const { getLlama } = await import('node-llama-cpp')
+        
+        // Get llama instance
+        this.llama = await getLlama()
+
+      // Check if model file actually exists and is readable
+      const { existsSync, statSync } = await import('fs')
+      if (!existsSync(this.modelPath)) {
+        throw new Error(`Model file not found: ${this.modelPath}`)
+      }
+      
+      const stats = statSync(this.modelPath)
+      if (stats.size === 0) {
+        throw new Error(`Model file is empty or corrupted: ${this.modelPath}`)
+      }
+      
+      const modelSizeMB = stats.size / 1024 / 1024
+      console.log(`Model file size: ${modelSizeMB.toFixed(2)} MB`)
+      
+      // Warn about large models
+      if (modelSizeMB > 3000) {
+        console.warn(`Warning: Large model (${modelSizeMB.toFixed(0)}MB) may be slow on CPU. Consider using a smaller model for better performance.`)
+      }
+
+        // Load model with error handling and timeout
+        console.log('Loading model into memory...')
+        const loadStartTime = Date.now()
+        
+        // Get optimal configuration based on hardware
+        const config = LLMConfigManager.getOptimalConfig(this.performanceProfile)
+        console.log('Using performance profile:', this.performanceProfile)
+        console.log('LLM Configuration:', {
+          gpuLayers: config.gpuLayers,
+          threads: config.threads,
+          batchSize: config.batchSize,
+          contextSize: config.contextSize
+        })
+        
+        this.model = await Promise.race([
+          this.llama.loadModel({
+            modelPath: this.modelPath,
+            gpuLayers: config.gpuLayers, // GPU acceleration for Apple Silicon
+            threads: config.threads, // Optimal thread count
+            batchSize: config.batchSize, // Optimized batch size
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Model loading timeout (120s)')), 120000)
+          )
+        ])
+        
+        const loadTime = ((Date.now() - loadStartTime) / 1000).toFixed(2)
+        console.log(`Model loaded in ${loadTime} seconds`)
+
+      if (!this.model) {
+        throw new Error('Failed to load model - model instance is null')
+      }
+
+      console.log('Creating model context...')
+      this.context = await this.model.createContext({
+        sequences: 1,
+        contextSize: config.contextSize, // Dynamic context size based on profile
+      })
+
+      if (!this.context) {
+        throw new Error('Failed to create model context')
+      }
+
+      console.log('Initializing chat session...')
+      const { LlamaChatSession } = await import('node-llama-cpp')
+      this.session = new LlamaChatSession({
+        contextSequence: this.context.getSequence(),
+        systemPrompt: "You are a helpful, friendly, and conversational AI assistant. Be natural, engaging, and concise in your responses. Don't be overly formal or robotic. Feel free to show personality while being helpful."
+      })
+
+      if (!this.session) {
+        throw new Error('Failed to create chat session')
+      }
+
+        this.isInitialized = true
+        console.log('LLM service initialized successfully')
+        console.log(`Model loaded: ${path.basename(this.modelPath)}`)
+        
+      } catch (error) {
+        console.error('Failed to initialize LLM service:', error)
+        this.cleanup()
+        throw error
+      }
+    })()
+    try {
+      await this.initPromise
+    } finally {
+      // Clear the init promise so future calls can re-init if needed
+      this.initPromise = null
+    }
+  }
+
+  private cleanup() {
+    try {
+      if (this.context) {
+        this.context.dispose()
+        this.context = null
+      }
+      if (this.model) {
+        this.model.dispose()
+        this.model = null
+      }
+      this.session = null
+      this.isInitialized = false
+    } catch (error) {
+      console.error('Error during cleanup:', error)
+    }
+  }
+
+  async reinitialize() {
+    if (this.reinitInProgress) {
+      // If already reinitializing, wait for any in-flight init to finish
+      if (this.initPromise) {
+        await this.initPromise
+      }
+      return
+    }
+    this.reinitInProgress = true
+    try {
+      console.log('Reinitializing LLM service...')
+      this.cleanup()
+      await this.initialize()
+    } finally {
+      this.reinitInProgress = false
+    }
+  }
+
+  async chat(message: string): Promise<string> {
+    // Ensure single-file chat execution order to avoid overlapping prompts
+    const run = async () => {
+      if (!this.isInitialized || !this.session) {
+        // Attempt to initialize on-demand
+        await this.initialize()
+      }
+
+      if (!message || message.trim().length === 0) {
+        throw new Error('Message cannot be empty')
+      }
+
+      try {
+        console.log('Processing chat message...')
+        const chatStartTime = Date.now()
+        
+        // Add timeout for chat responses (longer for larger models)
+        const timeoutMs = 120000 // 2 minutes for larger models
+        const response = await Promise.race([
+          this.session!.prompt(message.trim()),
+          new Promise<string>((_, reject) => 
+            setTimeout(() => reject(new Error(`Chat response timeout (${timeoutMs/1000}s) - model may be too large for your system`)), timeoutMs)
+          )
+        ])
+        
+        if (!response || response.trim().length === 0) {
+          throw new Error('Model returned empty response')
+        }
+        
+        const chatTime = ((Date.now() - chatStartTime) / 1000).toFixed(2)
+        console.log(`Chat response generated successfully in ${chatTime} seconds`)
+        console.log(`Response length: ${response.length} characters`)
+        
+        return response.trim()
+        
+      } catch (error) {
+        console.error('Chat error:', error)
+        
+        // If there's a context/session error, try to reinitialize
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        if (errorMessage?.includes('context') || errorMessage?.includes('session')) {
+          console.log('Attempting to reinitialize LLM service...')
+          try {
+            await this.reinitialize()
+            throw new Error('Model was reinitialized. Please try your message again.')
+          } catch (reinitError) {
+            const reinitErrorMessage = reinitError instanceof Error ? reinitError.message : String(reinitError)
+            throw new Error(`Chat failed and reinitialize failed: ${reinitErrorMessage}`)
+          }
+        }
+        
+        throw error
+      }
+    }
+
+    // Serialize chats: chain onto previous lock
+    const resultPromise = this.chatLock.then(run)
+    this.chatLock = resultPromise.then(() => {}).catch(() => {})
+    return resultPromise
+  }
+
+  async getModelInfo(): Promise<{ 
+    isLoaded: boolean; 
+    modelName?: string; 
+    modelPath?: string;
+    modelSize?: string;
+    error?: string;
+  }> {
+    try {
+      const availableModelPath = await this.findAvailableModel()
+      
+      // Determine the model name based on loaded or available model
+      let modelName: string | undefined
+      if (this.isInitialized && this.modelPath) {
+        modelName = path.basename(this.modelPath)
+      } else if (availableModelPath) {
+        modelName = path.basename(availableModelPath)
+      }
+      
+      const result = {
+        isLoaded: this.isInitialized,
+        modelName,
+        modelPath: this.modelPath || availableModelPath || undefined,
+        modelSize: undefined as string | undefined,
+        error: undefined as string | undefined
+      }
+      
+      if (this.modelPath) {
+        try {
+          const { statSync } = await import('fs')
+          const stats = statSync(this.modelPath)
+          result.modelSize = `${(stats.size / 1024 / 1024).toFixed(1)} MB`
+        } catch (error) {
+          console.error('Error getting model size:', error)
+        }
+      }
+      
+      if (!this.isInitialized) {
+        if (availableModelPath) {
+          result.error = 'Model found but not loaded. Click refresh to load it.'
+        } else {
+          result.error = 'No GGUF model found. Please download a model first.'
+        }
+      }
+      
+      console.log('Model info:', {
+        isLoaded: result.isLoaded,
+        modelName: result.modelName,
+        modelPath: result.modelPath ? path.basename(result.modelPath) : undefined
+      })
+      
+      return result
+      
+    } catch (error) {
+      console.error('Error getting model info:', error)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      return {
+        isLoaded: false,
+        error: `Failed to get model information: ${errorMessage}`
+      }
+    }
+  }
+
+  async getAvailableModels(): Promise<string[]> {
+    try {
+      const { existsSync, readdirSync } = await import('fs')
+      const modelsDir = path.join(app.getPath('userData'), 'models')
+      
+      if (!existsSync(modelsDir)) {
+        return []
+      }
+      
+      const files = readdirSync(modelsDir)
+      return files.filter((file: string) => file.endsWith('.gguf'))
+      
+    } catch (error) {
+      console.error('Error getting available models:', error)
+      return []
+    }
+  }
+
+  setPerformanceProfile(profile: PerformanceProfile): void {
+    this.performanceProfile = profile
+    console.log(`Performance profile set to: ${profile}`)
+  }
+
+  getPerformanceProfile(): PerformanceProfile {
+    return this.performanceProfile
+  }
+
+  getAvailableProfiles(): { name: PerformanceProfile; description: string }[] {
+    return LLMConfigManager.getAvailableProfiles()
+  }
+
+  getCurrentConfig() {
+    return LLMConfigManager.getOptimalConfig(this.performanceProfile)
+  }
+
+  dispose() {
+    console.log('Disposing LLM service...')
+    this.cleanup()
+  }
+}

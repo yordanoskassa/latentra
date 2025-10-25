@@ -1,0 +1,9 @@
+# Ignore LocalAI binaries (they will be downloaded during build)
+local-ai-*
+*.exe
+
+# Keep this .gitignore
+!.gitignore
+!.gitkeep
+
+

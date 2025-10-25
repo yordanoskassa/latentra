@@ -1,0 +1,109 @@
+{
+  "name": "latentra",
+  "version": "1.0.0",
+  "description": "Local LLM Studio - Download, manage, and chat with AI models",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "dev:renderer": "vite",
+    "dev:electron": "wait-on http://localhost:5176 && NODE_ENV=development electron .",
+    "build": "npm run build:renderer && npm run build:electron",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json",
+    "dist": "npm run download-localai && npm run build && electron-builder",
+    "postinstall": "electron-builder install-app-deps && node scripts/download-localai.js",
+    "download-model": "node download-model.js",
+    "download-localai": "node scripts/download-localai.js"
+  },
+  "keywords": [
+    "electron",
+    "llm",
+    "ai",
+    "local",
+    "llama.cpp",
+    "hugging-face",
+    "chat",
+    "studio"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@typescript-eslint/eslint-plugin": "^6.14.0",
+    "@typescript-eslint/parser": "^6.14.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^8.2.2",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "eslint": "^8.55.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.5",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.3.6",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.8",
+    "wait-on": "^7.2.0"
+  },
+  "dependencies": {
+    "@assistant-ui/react": "^0.11.34",
+    "@assistant-ui/react-markdown": "^0.11.3",
+    "@radix-ui/react-avatar": "^1.1.10",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-label": "^2.0.2",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-separator": "^1.0.3",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.0.4",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.294.0",
+    "motion": "^12.23.24",
+    "node-llama-cpp": "^3.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^2.6.0",
+    "tailwindcss-animate": "^1.0.7",
+    "zustand": "^5.0.8"
+  },
+  "build": {
+    "appId": "com.latentra.app",
+    "productName": "latentra",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "src/assets/icon.png",
+      "resources/bin/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "src/assets/icon.png"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "src/assets/icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "src/assets/icon.png"
+    }
+  }
+}
