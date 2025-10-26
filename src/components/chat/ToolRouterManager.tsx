@@ -141,7 +141,7 @@ export function ToolRouterManager({ selectedTools, onToolsChange, composioApiKey
       if (composioApiKey) {
         console.log(`[ToolRouterManager] Connecting ${toolkit.id} with authConfigId: ${toolkit.authConfigId}`)
         
-        // If no auth config ID, try to create one first
+        // Validate auth config ID format and existence
         if (!toolkit.authConfigId) {
           console.log(`[ToolRouterManager] No auth config found for ${toolkit.id}, attempting to create one`)
           
@@ -155,6 +155,10 @@ export function ToolRouterManager({ selectedTools, onToolsChange, composioApiKey
             console.log('Created auth config:', createResult.data)
             const authConfigId = createResult.data.id
             
+            if (!authConfigId || !authConfigId.startsWith('ac_')) {
+              throw new Error('Invalid auth config ID format received from API')
+            }
+            
             // Update the toolkit with the new auth config ID
             setToolkits(prev => prev.map(tk => 
               tk.id === toolkit.id 
@@ -165,8 +169,15 @@ export function ToolRouterManager({ selectedTools, onToolsChange, composioApiKey
             // Update the toolkit object for the connection attempt
             toolkit.authConfigId = authConfigId
           } else {
-            throw new Error(`Failed to create auth config: ${createResult?.error}`)
+            const errorMsg = typeof createResult?.error === 'string' ? createResult.error : 
+                           createResult?.error?.message || 'Unknown error'
+            throw new Error(`Failed to create auth config: ${errorMsg}`)
           }
+        }
+        
+        // Validate the auth config ID format
+        if (!toolkit.authConfigId.startsWith('ac_')) {
+          throw new Error(`Invalid auth config ID format for ${toolkit.name}. Expected format: ac_xxxxx`)
         }
         
         // Initiate connection via Electron IPC (avoids CORS)
@@ -199,15 +210,34 @@ export function ToolRouterManager({ selectedTools, onToolsChange, composioApiKey
           }
         } else {
           console.error('Composio API error:', result?.error, result?.statusCode, result?.details)
-          const errorMessage = result?.error || 'Failed to initiate connection'
+          
+          // Handle different error message formats
+          let errorMessage = 'Failed to initiate connection'
+          if (result?.error) {
+            if (typeof result.error === 'string') {
+              errorMessage = result.error
+            } else if (result.error.message) {
+              errorMessage = result.error.message
+            } else {
+              errorMessage = JSON.stringify(result.error)
+            }
+          }
           
           // Provide more specific error messages
-          if (errorMessage.includes('Missing authConfigId')) {
-            throw new Error(`Configuration error: No auth config found for ${toolkit.name}. Please check your Composio dashboard.`)
-          } else if (errorMessage.includes('deployment is currently unavailable')) {
-            throw new Error('Composio service is temporarily unavailable. Please try again later.')
+          if (typeof errorMessage === 'string') {
+            if (errorMessage.includes('Missing authConfigId')) {
+              throw new Error(`Configuration error: No auth config found for ${toolkit.name}. Please check your Composio dashboard.`)
+            } else if (errorMessage.includes('deployment is currently unavailable')) {
+              throw new Error('Composio service is temporarily unavailable. Please try again later.')
+            } else if (errorMessage.includes('Validation error')) {
+              throw new Error(`Authentication setup error for ${toolkit.name}. Please check your auth configuration in the Composio dashboard.`)
+            } else if (result?.statusCode === 10400) {
+              throw new Error(`Invalid request format for ${toolkit.name}. Please try again or contact support.`)
+            } else {
+              throw new Error(errorMessage)
+            }
           } else {
-            throw new Error(errorMessage)
+            throw new Error(`Authentication failed for ${toolkit.name}. Please check your configuration.`)
           }
         }
       } else {

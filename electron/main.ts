@@ -137,7 +137,26 @@ ipcMain.handle('composio:createAuthConfig', async (event, data: { toolkit: strin
               resolve({ success: true, data: parsed })
             } else {
               console.error('[Composio] API error response:', parsed)
-              resolve({ success: false, error: parsed.message || parsed.error || 'API error', statusCode: res.statusCode })
+              
+              // Handle different v3 API error formats for createAuthConfig
+              let errorMessage = 'API error'
+              if (parsed.message) {
+                errorMessage = parsed.message
+              } else if (parsed.error) {
+                if (typeof parsed.error === 'string') {
+                  errorMessage = parsed.error
+                } else if (parsed.error.message) {
+                  errorMessage = parsed.error.message
+                }
+              } else if (parsed.errors && Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+                errorMessage = parsed.errors[0].message || parsed.errors[0]
+              }
+              
+              resolve({ 
+                success: false, 
+                error: errorMessage,
+                statusCode: res.statusCode 
+              })
             }
           } catch (error) {
             console.error('[Composio] Failed to parse response:', data)
@@ -173,6 +192,7 @@ ipcMain.handle('composio:getIntegrations', async () => {
         hostname: 'backend.composio.dev',
         path: '/api/v3/auth_configs',
         method: 'GET',
+        timeout: 30000,
         headers: {
           'X-API-Key': apiKey,
           'Content-Type': 'application/json'
@@ -210,7 +230,13 @@ ipcMain.handle('composio:getIntegrations', async () => {
 
       req.on('error', (error) => {
         console.error('[Composio] Request error:', error)
-        resolve({ success: false, error: error.message })
+        resolve({ success: false, error: `Network error: ${error.message}` })
+      })
+
+      req.on('timeout', () => {
+        req.destroy()
+        console.error('[Composio] Request timeout')
+        resolve({ success: false, error: 'Request timed out after 30 seconds' })
       })
 
       req.end()
@@ -248,6 +274,7 @@ ipcMain.handle('composio:initiateConnection', async (event, data: { integrationI
         hostname: 'backend.composio.dev',
         path: '/api/v3/connected_accounts',
         method: 'POST',
+        timeout: 30000, // 30 second timeout
         headers: {
           'X-API-Key': apiKey,
           'Content-Type': 'application/json',
@@ -285,7 +312,27 @@ ipcMain.handle('composio:initiateConnection', async (event, data: { integrationI
               }
             } else {
               console.error('[Composio] API error response:', parsed)
-              resolve({ success: false, error: parsed.message || parsed.error || 'API error', statusCode: res.statusCode, details: parsed })
+              
+              // Handle different v3 API error formats
+              let errorMessage = 'API error'
+              if (parsed.message) {
+                errorMessage = parsed.message
+              } else if (parsed.error) {
+                if (typeof parsed.error === 'string') {
+                  errorMessage = parsed.error
+                } else if (parsed.error.message) {
+                  errorMessage = parsed.error.message
+                }
+              } else if (parsed.errors && Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+                errorMessage = parsed.errors[0].message || parsed.errors[0]
+              }
+              
+              resolve({ 
+                success: false, 
+                error: errorMessage,
+                statusCode: res.statusCode, 
+                details: parsed 
+              })
             }
           } catch (error) {
             console.error('[Composio] Failed to parse response. Raw data:', data)
@@ -296,7 +343,13 @@ ipcMain.handle('composio:initiateConnection', async (event, data: { integrationI
 
       req.on('error', (error) => {
         console.error('[Composio] Request error:', error)
-        resolve({ success: false, error: error.message })
+        resolve({ success: false, error: `Network error: ${error.message}` })
+      })
+
+      req.on('timeout', () => {
+        req.destroy()
+        console.error('[Composio] Request timeout')
+        resolve({ success: false, error: 'Request timed out after 30 seconds' })
       })
 
       req.write(payload)
@@ -321,6 +374,7 @@ ipcMain.handle('composio:verifyConnection', async (event, connectionId: string) 
         hostname: 'backend.composio.dev',
         path: `/api/v3/connected_accounts/${connectionId}`,
         method: 'GET',
+        timeout: 30000,
         headers: {
           'X-API-Key': apiKey,
           'Content-Type': 'application/json'
@@ -358,7 +412,13 @@ ipcMain.handle('composio:verifyConnection', async (event, connectionId: string) 
 
       req.on('error', (error) => {
         console.error('[Composio] Request error:', error)
-        resolve({ success: false, error: error.message })
+        resolve({ success: false, error: `Network error: ${error.message}` })
+      })
+
+      req.on('timeout', () => {
+        req.destroy()
+        console.error('[Composio] Request timeout')
+        resolve({ success: false, error: 'Request timed out after 30 seconds' })
       })
 
       req.end()

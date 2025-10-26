@@ -75,7 +75,96 @@ ipcMain.handle('app:getEnv', async (event, key) => {
         return undefined;
     }
 });
-// IPC handlers for Composio API calls (to avoid CORS issues)
+// IPC handlers for Composio API calls (to avoid CORS issues) - Using v3 API
+ipcMain.handle('composio:createAuthConfig', async (event, data) => {
+    try {
+        const apiKey = process.env.COMPOSIO_API_KEY;
+        if (!apiKey) {
+            return { success: false, error: 'No API key configured' };
+        }
+        const https = await import('https');
+        // Build payload for creating auth config using v3 format
+        const requestBody = {
+            toolkit: data.toolkit.toUpperCase(),
+            auth_scheme: data.authScheme,
+        };
+        if (data.scopes && data.scopes.length > 0) {
+            requestBody.scopes = data.scopes;
+        }
+        const payload = JSON.stringify(requestBody);
+        console.log('[Composio] Creating auth config with payload:', requestBody);
+        return new Promise((resolve) => {
+            const req = https.request({
+                hostname: 'backend.composio.dev',
+                path: '/api/v3/auth_configs',
+                method: 'POST',
+                headers: {
+                    'X-API-Key': apiKey,
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(payload)
+                }
+            }, (res) => {
+                let data = '';
+                res.on('data', (chunk) => { data += chunk; });
+                res.on('end', () => {
+                    console.log('[Composio] Create auth config response:', {
+                        statusCode: res.statusCode,
+                        bodyLength: data.length,
+                        bodyPreview: data.substring(0, 500)
+                    });
+                    if (!data || data.trim() === '') {
+                        console.error('[Composio] Empty response body');
+                        resolve({ success: false, error: 'Empty response from Composio API', statusCode: res.statusCode });
+                        return;
+                    }
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (res.statusCode === 200 || res.statusCode === 201) {
+                            resolve({ success: true, data: parsed });
+                        }
+                        else {
+                            console.error('[Composio] API error response:', parsed);
+                            // Handle different v3 API error formats for createAuthConfig
+                            let errorMessage = 'API error';
+                            if (parsed.message) {
+                                errorMessage = parsed.message;
+                            }
+                            else if (parsed.error) {
+                                if (typeof parsed.error === 'string') {
+                                    errorMessage = parsed.error;
+                                }
+                                else if (parsed.error.message) {
+                                    errorMessage = parsed.error.message;
+                                }
+                            }
+                            else if (parsed.errors && Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+                                errorMessage = parsed.errors[0].message || parsed.errors[0];
+                            }
+                            resolve({
+                                success: false,
+                                error: errorMessage,
+                                statusCode: res.statusCode
+                            });
+                        }
+                    }
+                    catch (error) {
+                        console.error('[Composio] Failed to parse response:', data);
+                        resolve({ success: false, error: 'Failed to parse response: The deployment is currently unavailable', statusCode: res.statusCode });
+                    }
+                });
+            });
+            req.on('error', (error) => {
+                console.error('[Composio] Request error:', error);
+                resolve({ success: false, error: error.message });
+            });
+            req.write(payload);
+            req.end();
+        });
+    }
+    catch (error) {
+        return { success: false, error: error.message };
+    }
+});
 ipcMain.handle('composio:getIntegrations', async () => {
     try {
         const apiKey = process.env.COMPOSIO_API_KEY;
@@ -88,6 +177,7 @@ ipcMain.handle('composio:getIntegrations', async () => {
                 hostname: 'backend.composio.dev',
                 path: '/api/v3/auth_configs',
                 method: 'GET',
+                timeout: 30000,
                 headers: {
                     'X-API-Key': apiKey,
                     'Content-Type': 'application/json'
@@ -96,17 +186,40 @@ ipcMain.handle('composio:getIntegrations', async () => {
                 let data = '';
                 res.on('data', (chunk) => { data += chunk; });
                 res.on('end', () => {
+                    console.log('[Composio] Auth configs response:', {
+                        statusCode: res.statusCode,
+                        bodyLength: data.length,
+                        bodyPreview: data.substring(0, 500)
+                    });
+                    if (!data || data.trim() === '') {
+                        console.error('[Composio] Empty response body');
+                        resolve({ success: false, error: 'Empty response from Composio API', statusCode: res.statusCode });
+                        return;
+                    }
                     try {
                         const parsed = JSON.parse(data);
-                        resolve({ success: true, data: parsed });
+                        if (res.statusCode === 200) {
+                            resolve({ success: true, data: parsed });
+                        }
+                        else {
+                            console.error('[Composio] API error response:', parsed);
+                            resolve({ success: false, error: parsed.message || parsed.error || 'API error', statusCode: res.statusCode });
+                        }
                     }
                     catch (error) {
-                        resolve({ success: false, error: 'Failed to parse response' });
+                        console.error('[Composio] Failed to parse response:', data);
+                        resolve({ success: false, error: 'Failed to parse response: The deployment is currently unavailable', statusCode: res.statusCode });
                     }
                 });
             });
             req.on('error', (error) => {
-                resolve({ success: false, error: error.message });
+                console.error('[Composio] Request error:', error);
+                resolve({ success: false, error: `Network error: ${error.message}` });
+            });
+            req.on('timeout', () => {
+                req.destroy();
+                console.error('[Composio] Request timeout');
+                resolve({ success: false, error: 'Request timed out after 30 seconds' });
             });
             req.end();
         });
@@ -127,7 +240,6 @@ ipcMain.handle('composio:initiateConnection', async (event, data) => {
             return { success: false, error: `Missing authConfigId for integration '${data.integrationId}'` };
         }
         // Build payload according to Composio v3 API format
-        // Simpler format: just user_id and auth_config_id at top level
         const requestBody = {
             user_id: data.userId || 'default-user',
             auth_config_id: data.authConfigId,
@@ -139,6 +251,7 @@ ipcMain.handle('composio:initiateConnection', async (event, data) => {
                 hostname: 'backend.composio.dev',
                 path: '/api/v3/connected_accounts',
                 method: 'POST',
+                timeout: 30000, // 30 second timeout
                 headers: {
                     'X-API-Key': apiKey,
                     'Content-Type': 'application/json',
@@ -163,21 +276,56 @@ ipcMain.handle('composio:initiateConnection', async (event, data) => {
                     try {
                         const parsed = JSON.parse(data);
                         if (res.statusCode === 200 || res.statusCode === 201) {
-                            resolve({ success: true, data: parsed });
+                            // v3 API typically returns redirectUri, redirect_url, or redirectUrl
+                            const redirectUrl = parsed.redirectUri || parsed.redirect_url || parsed.redirectUrl;
+                            if (redirectUrl) {
+                                resolve({ success: true, data: parsed });
+                            }
+                            else {
+                                console.error('[Composio] No redirect URL in successful response:', parsed);
+                                resolve({ success: false, error: 'No redirect URL in response' });
+                            }
                         }
                         else {
                             console.error('[Composio] API error response:', parsed);
-                            resolve({ success: false, error: parsed.message || parsed.error || 'API error', statusCode: res.statusCode, details: parsed });
+                            // Handle different v3 API error formats
+                            let errorMessage = 'API error';
+                            if (parsed.message) {
+                                errorMessage = parsed.message;
+                            }
+                            else if (parsed.error) {
+                                if (typeof parsed.error === 'string') {
+                                    errorMessage = parsed.error;
+                                }
+                                else if (parsed.error.message) {
+                                    errorMessage = parsed.error.message;
+                                }
+                            }
+                            else if (parsed.errors && Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+                                errorMessage = parsed.errors[0].message || parsed.errors[0];
+                            }
+                            resolve({
+                                success: false,
+                                error: errorMessage,
+                                statusCode: res.statusCode,
+                                details: parsed
+                            });
                         }
                     }
                     catch (error) {
                         console.error('[Composio] Failed to parse response. Raw data:', data);
-                        resolve({ success: false, error: `Failed to parse response: ${data}`, statusCode: res.statusCode });
+                        resolve({ success: false, error: `Failed to parse response: The deployment is currently unavailable`, statusCode: res.statusCode });
                     }
                 });
             });
             req.on('error', (error) => {
-                resolve({ success: false, error: error.message });
+                console.error('[Composio] Request error:', error);
+                resolve({ success: false, error: `Network error: ${error.message}` });
+            });
+            req.on('timeout', () => {
+                req.destroy();
+                console.error('[Composio] Request timeout');
+                resolve({ success: false, error: 'Request timed out after 30 seconds' });
             });
             req.write(payload);
             req.end();
@@ -199,6 +347,7 @@ ipcMain.handle('composio:verifyConnection', async (event, connectionId) => {
                 hostname: 'backend.composio.dev',
                 path: `/api/v3/connected_accounts/${connectionId}`,
                 method: 'GET',
+                timeout: 30000,
                 headers: {
                     'X-API-Key': apiKey,
                     'Content-Type': 'application/json'
@@ -207,22 +356,40 @@ ipcMain.handle('composio:verifyConnection', async (event, connectionId) => {
                 let data = '';
                 res.on('data', (chunk) => { data += chunk; });
                 res.on('end', () => {
+                    console.log('[Composio] Verify connection response:', {
+                        statusCode: res.statusCode,
+                        bodyLength: data.length,
+                        bodyPreview: data.substring(0, 500)
+                    });
+                    if (!data || data.trim() === '') {
+                        console.error('[Composio] Empty response body');
+                        resolve({ success: false, error: 'Empty response from Composio API', statusCode: res.statusCode });
+                        return;
+                    }
                     try {
                         const parsed = JSON.parse(data);
                         if (res.statusCode === 200) {
                             resolve({ success: true, data: parsed });
                         }
                         else {
-                            resolve({ success: false, error: parsed.message || 'API error', statusCode: res.statusCode });
+                            console.error('[Composio] API error response:', parsed);
+                            resolve({ success: false, error: parsed.message || parsed.error || 'API error', statusCode: res.statusCode });
                         }
                     }
                     catch (error) {
-                        resolve({ success: false, error: 'Failed to parse response' });
+                        console.error('[Composio] Failed to parse response:', data);
+                        resolve({ success: false, error: 'Failed to parse response: The deployment is currently unavailable', statusCode: res.statusCode });
                     }
                 });
             });
             req.on('error', (error) => {
-                resolve({ success: false, error: error.message });
+                console.error('[Composio] Request error:', error);
+                resolve({ success: false, error: `Network error: ${error.message}` });
+            });
+            req.on('timeout', () => {
+                req.destroy();
+                console.error('[Composio] Request timeout');
+                resolve({ success: false, error: 'Request timed out after 30 seconds' });
             });
             req.end();
         });

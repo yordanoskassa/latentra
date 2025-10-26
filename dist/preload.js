@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 contextBridge.exposeInMainWorld('electron', {
     getEnv: (key) => ipcRenderer.invoke('app:getEnv', key),
     composio: {
+        checkHealth: () => ipcRenderer.invoke('composio:checkHealth'),
+        createAuthConfig: (data) => ipcRenderer.invoke('composio:createAuthConfig', data),
         getIntegrations: () => ipcRenderer.invoke('composio:getIntegrations'),
         initiateConnection: (data) => ipcRenderer.invoke('composio:initiateConnection', data),
         verifyConnection: (connectionId) => ipcRenderer.invoke('composio:verifyConnection', connectionId)
