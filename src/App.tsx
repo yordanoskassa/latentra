@@ -6,6 +6,8 @@ import { ModelManager } from '@/components/chat/ModelManager'
 import { ModernChatInterface } from '@/components/chat/ModernChatInterface'
 import { PerformanceSettings } from '@/components/chat/PerformanceSettings'
 import { DistributedSettings } from '@/components/chat/DistributedSettings'
+import { SimpleP2PPage } from '@/components/chat/SimpleP2PPage'
+import { P2PSettings } from '@/components/chat/P2PSettings'
 import { Settings, HardDrive, Brain, Search, MessageSquare, Network } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
@@ -70,7 +72,7 @@ function App() {
                 <p className="text-muted-foreground lowercase">
                   {activeTab === 'chat' && 'chat with your local ai models'}
                   {activeTab === 'models' && 'browse, download, and manage ai models'}
-                  {activeTab === 'network' && 'collaborate with other devices'}
+                  {activeTab === 'network' && 'share ai power with nearby devices'}
                   {activeTab === 'settings' && 'configure your llm preferences'}
                 </p>
               </div>
@@ -101,14 +103,16 @@ function App() {
           )}
 
           {activeTab === 'network' && (
-            <div className="max-w-3xl space-y-6">
-              <DistributedSettings />
+            <div className="w-full">
+              <SimpleP2PPage />
             </div>
           )}
 
           {activeTab === 'settings' && (
             <div className="max-w-2xl space-y-6">
               <PerformanceSettings />
+              
+              <P2PSettings />
               
               <Card className="animate-fade-in">
                 <CardHeader>

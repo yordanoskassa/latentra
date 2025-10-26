@@ -1,6 +1,6 @@
 import { LLMService } from './llm-service.js'
-import fetch from 'node-fetch'
 import { LocalAIManager } from './localai-manager.js'
+import os from 'os'
 
 export type InferenceMode = 'local' | 'distributed' | 'hybrid'
 
@@ -60,17 +60,18 @@ export class DistributedInferenceService {
     peersInvolved: string[]
   }
   private localAIManager: LocalAIManager
+  private manuallyStopped: boolean = false
 
   constructor(llmService: LLMService) {
     this.llmService = llmService
     
-    // Default configuration
+    // Default configuration - P2P enabled by default
     this.config = {
-      mode: 'local',
+      mode: 'hybrid', // Use hybrid mode for automatic switching
       localAIEndpoint: 'http://localhost:8080',
       p2pPort: 9000,
       userProfile: this.generateDefaultProfile(),
-      enableP2P: false
+      enableP2P: true // Always on
     }
 
     // Initialize LocalAI manager
@@ -82,13 +83,13 @@ export class DistributedInferenceService {
 
   private generateDefaultProfile(): UserProfile {
     const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4']
-    const os = process.platform
-    const hostname = require('os').hostname()
+    const platform = process.platform
+    const hostname = os.hostname()
     
     return {
       id: `device-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       displayName: hostname.split('.')[0] || 'Anonymous',
-      deviceName: `${os} device`,
+      deviceName: `${platform} device`,
       color: colors[Math.floor(Math.random() * colors.length)],
     }
   }
@@ -98,8 +99,13 @@ export class DistributedInferenceService {
       this.config = { ...this.config, ...config }
     }
 
-    // Auto-start LocalAI if P2P is enabled and binary is available
-    if (this.config.enableP2P && this.localAIManager.isBinaryAvailable()) {
+    // Check if LocalAI is already running first
+    const status = this.localAIManager.getStatus()
+    if (status.isRunning) {
+      console.log('LocalAI already running, skipping auto-start')
+      this.localAIAvailable = true
+    } else if (this.config.enableP2P && status.binaryAvailable && !this.manuallyStopped) {
+      // Auto-start LocalAI if P2P is enabled, binary available, and not manually stopped
       try {
         console.log('Auto-starting LocalAI...')
         await this.localAIManager.start()
@@ -448,11 +454,13 @@ export class DistributedInferenceService {
   }
 
   async startLocalAI(): Promise<void> {
+    this.manuallyStopped = false
     await this.localAIManager.start()
     this.localAIAvailable = true
   }
 
   async stopLocalAI(): Promise<void> {
+    this.manuallyStopped = true
     await this.localAIManager.stop()
     this.localAIAvailable = false
   }

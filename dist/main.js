@@ -2,9 +2,11 @@ import { app, BrowserWindow, Menu, ipcMain } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { LLMService } from './llm-service.js';
+import { DistributedInferenceService } from './distributed-service.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === 'development';
 const llmService = new LLMService();
+const distributedService = new DistributedInferenceService(llmService);
 function createWindow() {
     const mainWindow = new BrowserWindow({
         height: 800,
@@ -37,6 +39,13 @@ app.whenReady().then(async () => {
     }
     catch (error) {
         console.log('LLM service initialization failed, will try again on first chat:', error);
+    }
+    // Initialize distributed service
+    try {
+        await distributedService.initialize();
+    }
+    catch (error) {
+        console.log('Distributed service initialization failed:', error);
     }
     app.on('activate', function () {
         if (BrowserWindow.getAllWindows().length === 0)
@@ -298,9 +307,149 @@ ipcMain.handle('llm:setPerformanceProfile', async (event, profile) => {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
 });
+// IPC handlers for distributed inference
+ipcMain.handle('distributed:getStatus', async () => {
+    try {
+        return { success: true, status: distributedService.getStatus() };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:getConfig', async () => {
+    try {
+        return { success: true, config: distributedService.getConfig() };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:updateConfig', async (event, config) => {
+    try {
+        await distributedService.updateConfig(config);
+        return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:updateUserProfile', async (event, profile) => {
+    try {
+        await distributedService.updateUserProfile(profile);
+        return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:testLocalAI', async () => {
+    try {
+        return await distributedService.testLocalAI();
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:getPeers', async () => {
+    try {
+        return { success: true, peers: distributedService.getPeers() };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:getMetrics', async () => {
+    try {
+        return { success: true, metrics: distributedService.getMetrics() };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:getComputeDistribution', async () => {
+    try {
+        return { success: true, distribution: distributedService.getComputeDistribution() };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:getCurrentRequest', async () => {
+    try {
+        return { success: true, request: distributedService.getCurrentRequest() };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:getLocalAIStatus', async () => {
+    try {
+        return { success: true, status: distributedService.getLocalAIStatus() };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:startLocalAI', async () => {
+    try {
+        await distributedService.startLocalAI();
+        return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:stopLocalAI', async () => {
+    try {
+        await distributedService.stopLocalAI();
+        return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:restartLocalAI', async () => {
+    try {
+        await distributedService.restartLocalAI();
+        return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:getP2PToken', async () => {
+    try {
+        const token = await distributedService.getP2PToken();
+        return { success: true, token };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:getSwarmInfo', async () => {
+    try {
+        const info = await distributedService.getSwarmInfo();
+        return { success: true, info };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
+ipcMain.handle('distributed:updateLocalAIConfig', async (event, config) => {
+    try {
+        distributedService.updateLocalAIConfig(config);
+        return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+});
 // Cleanup on app quit
 app.on('before-quit', () => {
     if (llmService) {
         llmService.dispose();
+    }
+    if (distributedService) {
+        distributedService.dispose();
     }
 });

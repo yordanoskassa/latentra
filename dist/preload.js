@@ -19,5 +19,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
         removeDownloadProgressListener: () => {
             ipcRenderer.removeAllListeners('model:download-progress');
         }
+    },
+    distributed: {
+        getStatus: () => ipcRenderer.invoke('distributed:getStatus'),
+        getConfig: () => ipcRenderer.invoke('distributed:getConfig'),
+        updateConfig: (config) => ipcRenderer.invoke('distributed:updateConfig', config),
+        updateUserProfile: (profile) => ipcRenderer.invoke('distributed:updateUserProfile', profile),
+        testLocalAI: () => ipcRenderer.invoke('distributed:testLocalAI'),
+        getPeers: () => ipcRenderer.invoke('distributed:getPeers'),
+        getMetrics: () => ipcRenderer.invoke('distributed:getMetrics'),
+        getComputeDistribution: () => ipcRenderer.invoke('distributed:getComputeDistribution'),
+        getCurrentRequest: () => ipcRenderer.invoke('distributed:getCurrentRequest'),
+        getLocalAIStatus: () => ipcRenderer.invoke('distributed:getLocalAIStatus'),
+        startLocalAI: () => ipcRenderer.invoke('distributed:startLocalAI'),
+        stopLocalAI: () => ipcRenderer.invoke('distributed:stopLocalAI'),
+        restartLocalAI: () => ipcRenderer.invoke('distributed:restartLocalAI'),
+        getP2PToken: () => ipcRenderer.invoke('distributed:getP2PToken'),
+        getSwarmInfo: () => ipcRenderer.invoke('distributed:getSwarmInfo'),
+        updateLocalAIConfig: (config) => ipcRenderer.invoke('distributed:updateLocalAIConfig', config),
     }
 });

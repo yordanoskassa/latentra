@@ -119,8 +119,8 @@ export class LocalAIManager {
       args.push('--p2ptoken', this.config.token)
     }
 
-    const env = {
-      ...process.env,
+    const env: Record<string, string> = {
+      ...process.env as Record<string, string>,
       LOCALAI_P2P_DISABLE_DHT: 'true', // Use mDNS for local discovery only
     }
 
@@ -274,7 +274,7 @@ export class LocalAIManager {
       ])
 
       const token = tokenRes.ok ? await tokenRes.text() : undefined
-      const peers = peersRes.ok ? await peersRes.json() : undefined
+      const peers = peersRes.ok ? (await peersRes.json()) as any[] : undefined
 
       return {
         token: token?.trim(),

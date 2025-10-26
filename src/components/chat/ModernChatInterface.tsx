@@ -204,7 +204,7 @@ export function ModernChatInterface() {
                 </div>
                 <div className="space-y-2">
                   <h1 className="text-2xl font-semibold text-foreground">
-                    Welcome to LatenTra
+                    Welcome to latentra
                   </h1>
                   <p className="text-muted-foreground">
                     Your local AI assistant is ready to help

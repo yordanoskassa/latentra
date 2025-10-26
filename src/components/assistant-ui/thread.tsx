@@ -121,7 +121,7 @@ const ThreadWelcome: FC = () => {
             animate={{ opacity: 1, y: 0 }}
             className="text-2xl font-semibold text-foreground"
           >
-            Welcome to LatenTra
+            Welcome to latentra
           </m.h1>
           <m.p
             initial={{ opacity: 0, y: 10 }}

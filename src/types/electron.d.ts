@@ -61,11 +61,36 @@ export interface IElectronAPI {
       peers?: Array<{
         id: string
         name: string
+        address: string
+        port: number
         status: 'connected' | 'disconnected' | 'busy'
         contribution: number
       }>
       error?: string
     }>
+    getMetrics: () => Promise<{ success: boolean; metrics?: any; error?: string }>
+    getComputeDistribution: () => Promise<{ success: boolean; distribution?: any; error?: string }>
+    getCurrentRequest: () => Promise<{ success: boolean; request?: any; error?: string }>
+    getLocalAIStatus: () => Promise<{
+      success: boolean
+      status?: {
+        isRunning: boolean
+        binaryAvailable: boolean
+        binaryPath: string
+        config: {
+          port: number
+          p2pPort: number
+          modelsPath: string
+        }
+      }
+      error?: string
+    }>
+    startLocalAI: () => Promise<{ success: boolean; error?: string }>
+    stopLocalAI: () => Promise<{ success: boolean; error?: string }>
+    restartLocalAI: () => Promise<{ success: boolean; error?: string }>
+    getP2PToken: () => Promise<{ success: boolean; token?: string | null; error?: string }>
+    getSwarmInfo: () => Promise<{ success: boolean; info?: any; error?: string }>
+    updateLocalAIConfig: (config: any) => Promise<{ success: boolean; error?: string }>
   }
 }
 
