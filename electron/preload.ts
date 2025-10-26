@@ -59,6 +59,12 @@ contextBridge.exposeInMainWorld('electron', {
     delete: (id: string) => ipcRenderer.invoke('agent:delete', id),
     uploadFile: (agentId: string) => ipcRenderer.invoke('agent:uploadFile', agentId),
     getFiles: (agentId: string) => ipcRenderer.invoke('agent:getFiles', agentId),
-    deleteFile: (fileId: string) => ipcRenderer.invoke('agent:deleteFile', fileId)
+    deleteFile: (fileId: string) => ipcRenderer.invoke('agent:deleteFile', fileId),
+    // Agent chat methods
+    setCurrentAgent: (agentId: string) => ipcRenderer.invoke('agent:setCurrentAgent', agentId),
+    chat: (message: string) => ipcRenderer.invoke('agent:chat', message),
+    getCurrentAgent: () => ipcRenderer.invoke('agent:getCurrentAgent'),
+    getConversationHistory: () => ipcRenderer.invoke('agent:getConversationHistory'),
+    clearHistory: () => ipcRenderer.invoke('agent:clearHistory')
   }
 })

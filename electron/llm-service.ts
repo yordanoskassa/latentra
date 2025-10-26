@@ -9,7 +9,7 @@ export class LLMService {
   private session: any = null
   private isInitialized = false
   private modelPath: string | null = null
-  private performanceProfile: PerformanceProfile = 'auto'
+  private performanceProfile: PerformanceProfile = 'extreme' // Use maximum performance by default
   // Concurrency controls
   private initPromise: Promise<void> | null = null
   private reinitInProgress = false
@@ -17,7 +17,7 @@ export class LLMService {
 
   async findAvailableModel(): Promise<string | null> {
     try {
-      const { existsSync, readdirSync } = await import('fs')
+      const { existsSync, readdirSync, statSync } = await import('fs')
       const modelsDir = path.join(app.getPath('userData'), 'models')
       console.log('Looking for models in:', modelsDir)
       
@@ -28,35 +28,107 @@ export class LLMService {
         return null
       }
       
-      // List of preferred models in order of preference (fastest/smallest first for quick testing)
-      const preferredModels = [
-        'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',   // Fast and small for testing
-        'qwen2.5-0.5b-instruct-q4.gguf',
-        'llama-3.2-1b-instruct-q4.gguf',
-        'phi-3-mini-4k-instruct-q4.gguf',
-        'llama-3.2-3b-instruct-q4.gguf',
-        'mistral-7b-instruct-v0.2.Q4_K_M.gguf',   // Larger but better quality
-        'codellama-7b-instruct.Q4_K_M.gguf'
-      ]
+      // Enhanced model selection with performance tiers
+      const modelTiers = {
+        // Tier 1: Best conversational models (prioritize these)
+        conversational: [
+          'llama-3.2-3b-instruct-q4.gguf',
+          'llama-3.2-1b-instruct-q4.gguf', 
+          'qwen2.5-3b-instruct-q4_k_m.gguf',
+          'qwen2.5-1.5b-instruct-q4_k_m.gguf',
+          'qwen2.5-0.5b-instruct-q4.gguf',
+          'phi-3.5-mini-instruct-q4.gguf',
+          'phi-3-mini-4k-instruct-q4.gguf'
+        ],
+        
+        // Tier 2: High-quality larger models (if system can handle)
+        premium: [
+          'llama-3.2-8b-instruct-q4_k_m.gguf',
+          'mistral-nemo-12b-instruct-2407-q4_k_m.gguf',
+          'mistral-7b-instruct-v0.3.Q4_K_M.gguf',
+          'mistral-7b-instruct-v0.2.Q4_K_M.gguf',
+          'codellama-7b-instruct.Q4_K_M.gguf'
+        ],
+        
+        // Tier 3: Fast but basic (fallback for testing)
+        fallback: [
+          'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf'
+        ]
+      }
       
-      // Check for preferred models first
-      for (const modelFile of preferredModels) {
+      // Get system capabilities  
+      const memoryGB = Math.round(require('os').totalmem() / (1024 ** 3))
+      const isAppleSilicon = process.platform === 'darwin' && process.arch === 'arm64'
+      
+      // Select tier based on system capabilities
+      let searchOrder: string[] = []
+      if (isAppleSilicon && memoryGB >= 16) {
+        // High-end systems: try premium first, then conversational
+        searchOrder = [...modelTiers.premium, ...modelTiers.conversational, ...modelTiers.fallback]
+      } else if (memoryGB >= 8) {
+        // Mid-range systems: conversational models only
+        searchOrder = [...modelTiers.conversational, ...modelTiers.fallback]
+      } else {
+        // Low-end systems: fallback models only
+        searchOrder = [...modelTiers.fallback, ...modelTiers.conversational]
+      }
+      
+      console.log(`System: ${isAppleSilicon ? 'Apple Silicon' : 'Other'}, RAM: ${memoryGB}GB`)
+      console.log('Model search order:', searchOrder.slice(0, 3), '...')
+      
+      // Check for preferred models in order
+      for (const modelFile of searchOrder) {
         const modelPath = path.join(modelsDir, modelFile)
         if (existsSync(modelPath)) {
-          console.log(`Found preferred model: ${modelFile}`)
-          return modelPath
+          try {
+            const stats = statSync(modelPath)
+            const sizeMB = stats.size / 1024 / 1024
+            
+            // Skip corrupted or incomplete models
+            if (sizeMB < 50) {
+              console.log(`Skipping ${modelFile}: too small (${sizeMB.toFixed(1)}MB)`)
+              continue
+            }
+            
+            console.log(`Selected model: ${modelFile} (${sizeMB.toFixed(1)}MB)`)
+            return modelPath
+          } catch (error) {
+            console.log(`Error checking ${modelFile}:`, error)
+            continue
+          }
         }
       }
       
-      // If no preferred model found, look for any .gguf file
+      // If no preferred model found, look for any valid .gguf file
       try {
         const files = readdirSync(modelsDir)
-        const ggufFiles = files.filter(file => file.endsWith('.gguf'))
+        const ggufFiles = files
+          .filter(file => file.endsWith('.gguf'))
+          .map(file => {
+            try {
+              const filePath = path.join(modelsDir, file)
+              const stats = statSync(filePath)
+              return {
+                name: file,
+                path: filePath,
+                size: stats.size / 1024 / 1024
+              }
+            } catch {
+              return null
+            }
+          })
+          .filter(file => file && file.size >= 50) // Filter out corrupted files
+          .sort((a, b) => {
+            // Sort by size - prefer medium-sized models for better balance
+            const aScore = Math.abs(a!.size - 1000) // Prefer ~1GB models
+            const bScore = Math.abs(b!.size - 1000)
+            return aScore - bScore
+          })
         
         if (ggufFiles.length > 0) {
-          const modelPath = path.join(modelsDir, ggufFiles[0])
-          console.log(`Found GGUF model: ${ggufFiles[0]}`)
-          return modelPath
+          const selected = ggufFiles[0]!
+          console.log(`Found GGUF model: ${selected.name} (${selected.size.toFixed(1)}MB)`)
+          return selected.path
         }
       } catch (error) {
         console.log('Error reading models directory:', error)
@@ -162,7 +234,7 @@ export class LLMService {
       const { LlamaChatSession } = await import('node-llama-cpp')
       this.session = new LlamaChatSession({
         contextSequence: this.context.getSequence(),
-        systemPrompt: "You are a helpful, friendly, and conversational AI assistant. Be natural, engaging, and concise in your responses. Don't be overly formal or robotic. Feel free to show personality while being helpful."
+        systemPrompt: "You are a helpful, friendly AI assistant with personality. Be conversational and natural - like talking to a knowledgeable friend. Show enthusiasm, use casual language when appropriate, and don't be overly formal or robotic. Keep responses concise but engaging. When role-playing as specific agents or characters, fully embody their personality and expertise."
       })
 
       if (!this.session) {

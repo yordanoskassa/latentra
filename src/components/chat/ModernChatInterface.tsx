@@ -130,24 +130,51 @@ export function ModernChatInterface() {
     setIsLoading(true)
 
     try {
-      const response = await window.electronAPI.llm.chat(content.trim())
+      let response
       
-      if (response.success && response.response) {
-        const botMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: response.response,
-          sender: 'bot',
-          timestamp: new Date()
+      if (selectedAgent) {
+        // Use agent chat when an agent is selected
+        response = await window.electron?.agent?.chat(content.trim())
+        
+        if (response?.success && response.data) {
+          const agentResponse = response.data
+          const botMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            content: agentResponse.content,
+            sender: 'bot',
+            timestamp: new Date()
+          }
+          setMessages(prev => [...prev, botMessage])
+        } else {
+          const errorMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            content: `Agent Error: ${response?.error || 'Failed to get response from agent'}`,
+            sender: 'bot',
+            timestamp: new Date()
+          }
+          setMessages(prev => [...prev, errorMessage])
         }
-        setMessages(prev => [...prev, botMessage])
       } else {
-        const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: `Error: ${response.error || 'Unknown error occurred'}`,
-          sender: 'bot',
-          timestamp: new Date()
+        // Use direct LLM chat when no agent is selected
+        response = await window.electronAPI.llm.chat(content.trim())
+        
+        if (response.success && response.response) {
+          const botMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            content: response.response,
+            sender: 'bot',
+            timestamp: new Date()
+          }
+          setMessages(prev => [...prev, botMessage])
+        } else {
+          const errorMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            content: `Error: ${response.error || 'Unknown error occurred'}`,
+            sender: 'bot',
+            timestamp: new Date()
+          }
+          setMessages(prev => [...prev, errorMessage])
         }
-        setMessages(prev => [...prev, errorMessage])
       }
     } catch (error) {
       const errorMessage: Message = {
@@ -174,12 +201,82 @@ export function ModernChatInterface() {
     }
   }
 
-  const suggestions = [
-    "Explain quantum computing",
-    "Write a Python function",
-    "Help me plan my day",
-    "Tell me a joke",
-  ]
+  const getSuggestions = () => {
+    if (selectedAgent) {
+      // Generate contextual suggestions based on agent's role and tools
+      const suggestions: string[] = []
+      const role = selectedAgent.role.toLowerCase()
+      
+      // Role-specific suggestions
+      if (role.includes('assistant') || role.includes('secretary')) {
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('gmail'))) {
+          suggestions.push("Send an email to my client about the project update")
+          suggestions.push("Check my inbox for urgent messages")
+        }
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('calendar'))) {
+          suggestions.push("Schedule a meeting with the team for next week")
+          suggestions.push("What's on my calendar for today?")
+        }
+      }
+      
+      if (role.includes('developer') || role.includes('engineer')) {
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('github'))) {
+          suggestions.push("Create a bug report in our main repository")
+          suggestions.push("Check the latest pull requests")
+        }
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('slack'))) {
+          suggestions.push("Send a message to the dev team about the deployment")
+        }
+      }
+      
+      if (role.includes('manager') || role.includes('lead')) {
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('calendar'))) {
+          suggestions.push("Schedule a team standup for tomorrow at 10am")
+        }
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('slack'))) {
+          suggestions.push("Send a status update to the #general channel")
+        }
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('notion'))) {
+          suggestions.push("Create a project roadmap document")
+        }
+      }
+      
+      // Generic tool-based suggestions if role-specific ones don't apply
+      if (suggestions.length === 0) {
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('gmail'))) {
+          suggestions.push("Send an email about our upcoming project")
+        }
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('calendar'))) {
+          suggestions.push("Schedule a follow-up meeting")
+        }
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('slack'))) {
+          suggestions.push("Send a team announcement")
+        }
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('github'))) {
+          suggestions.push("Create an issue for the new feature")
+        }
+        if (selectedAgent.tools.some(tool => tool.toLowerCase().includes('notion'))) {
+          suggestions.push("Create a new project note")
+        }
+      }
+      
+      // Always add agent-specific help suggestions
+      suggestions.push("What tasks can you help me with?")
+      suggestions.push(`Tell me more about your ${selectedAgent.tools.length} tools`)
+      
+      return suggestions.slice(0, 4) // Limit to 4 suggestions
+    }
+    
+    // Enhanced default suggestions for direct LLM chat
+    return [
+      "Explain a complex concept simply",
+      "Help me write some code", 
+      "Brainstorm ideas for my project",
+      "Analyze this problem I'm facing",
+    ]
+  }
+
+  const suggestions = getSuggestions()
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -189,12 +286,32 @@ export function ModernChatInterface() {
           <Bot className="w-4 h-4 text-muted-foreground" />
           <Select
             value={selectedAgent?.id || 'none'}
-            onValueChange={(value) => {
+            onValueChange={async (value) => {
               if (value === 'none') {
                 setSelectedAgent(null)
+                // Clear any active agent
+                await window.electron?.agent?.clearHistory()
               } else {
                 const agent = agents.find(a => a.id === value)
-                setSelectedAgent(agent || null)
+                if (agent) {
+                  setSelectedAgent(agent)
+                  // Set the current agent in the backend
+                  const result = await window.electron?.agent?.setCurrentAgent(agent.id)
+                  if (result?.success) {
+                    // Clear messages when switching agents
+                    setMessages([])
+                    // Add initial agent greeting
+                    const greetingMessage: Message = {
+                      id: Date.now().toString(),
+                      content: `Hello! I'm ${agent.name}, your ${agent.role}. ${agent.backstory ? agent.backstory.substring(0, 200) + '...' : ''}\n\nI have access to these tools: ${agent.tools.join(', ')}\n\nHow can I help you today?`,
+                      sender: 'bot',
+                      timestamp: new Date()
+                    }
+                    setMessages([greetingMessage])
+                  } else {
+                    console.error('Failed to set current agent:', result?.error)
+                  }
+                }
               }
             }}
           >

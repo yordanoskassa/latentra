@@ -1,6 +1,6 @@
 import os from 'os'
 
-export type PerformanceProfile = 'auto' | 'cpu-only' | 'balanced' | 'performance' | 'maximum'
+export type PerformanceProfile = 'auto' | 'cpu-only' | 'balanced' | 'performance' | 'maximum' | 'extreme'
 
 export interface LLMConfig {
   gpuLayers: number
@@ -44,7 +44,9 @@ export class LLMConfigManager {
 
     // Auto-detect best profile
     if (profile === 'auto') {
-      if (isAppleSilicon && memoryGB >= 16) {
+      if (isAppleSilicon && memoryGB >= 32) {
+        profile = 'extreme'
+      } else if (isAppleSilicon && memoryGB >= 16) {
         profile = 'maximum'
       } else if (isAppleSilicon && memoryGB >= 8) {
         profile = 'performance'
@@ -59,13 +61,24 @@ export class LLMConfigManager {
     let config: LLMConfig
 
     switch (profile) {
+      case 'extreme':
+        // Maximum performance for Apple Silicon with 32GB+ RAM
+        config = {
+          gpuLayers: isAppleSilicon ? 99 : 0, // Use all available GPU layers
+          threads: isAppleSilicon ? 8 : Math.min(cpuCount, 12),
+          batchSize: 4096,
+          contextSize: 16384, // Large context for better conversations
+          profile: 'extreme'
+        }
+        break
+
       case 'maximum':
         // Best for Apple Silicon with 16GB+ RAM
         config = {
-          gpuLayers: isAppleSilicon ? 35 : 0,
-          threads: isAppleSilicon ? 4 : Math.min(cpuCount, 8),
-          batchSize: 2048,
-          contextSize: 8192,
+          gpuLayers: isAppleSilicon ? 50 : 0,
+          threads: isAppleSilicon ? 6 : Math.min(cpuCount, 10),
+          batchSize: 3072,
+          contextSize: 12288,
           profile: 'maximum'
         }
         break
@@ -73,10 +86,10 @@ export class LLMConfigManager {
       case 'performance':
         // Good for Apple Silicon or powerful CPUs with 8GB+ RAM
         config = {
-          gpuLayers: isAppleSilicon ? 33 : 0,
-          threads: isAppleSilicon ? 6 : Math.min(Math.floor(cpuCount * 0.75), 12),
-          batchSize: 1024,
-          contextSize: 4096,
+          gpuLayers: isAppleSilicon ? 40 : 0,
+          threads: isAppleSilicon ? 4 : Math.min(Math.floor(cpuCount * 0.75), 12),
+          batchSize: 2048,
+          contextSize: 8192,
           profile: 'performance'
         }
         break
@@ -116,6 +129,8 @@ export class LLMConfigManager {
     switch (profile) {
       case 'auto':
         return 'automatically detects best settings for your hardware'
+      case 'extreme':
+        return 'maximum possible performance, requires 32gb+ ram (apple silicon only)'
       case 'maximum':
         return 'fastest performance, requires 16gb+ ram (apple silicon optimized)'
       case 'performance':
@@ -132,6 +147,7 @@ export class LLMConfigManager {
   static getAvailableProfiles(): { name: PerformanceProfile; description: string }[] {
     return [
       { name: 'auto', description: this.getProfileDescription('auto') },
+      { name: 'extreme', description: this.getProfileDescription('extreme') },
       { name: 'maximum', description: this.getProfileDescription('maximum') },
       { name: 'performance', description: this.getProfileDescription('performance') },
       { name: 'balanced', description: this.getProfileDescription('balanced') },

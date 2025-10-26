@@ -128,13 +128,14 @@ export class DistributedInferenceService {
 
     // Start peer discovery if P2P is enabled
     if (this.config.enableP2P) {
+      // Always use native mDNS P2P discovery for device detection
+      console.log('Starting native P2P discovery for device detection')
+      this.startNativeP2PDiscovery()
+      
+      // Also start LocalAI P2P if available (for actual distributed inference)
       if (this.localAIAvailable) {
-        // Use LocalAI P2P
+        console.log('LocalAI available, also starting LocalAI P2P')
         this.startPeerDiscovery()
-      } else {
-        // Use native mDNS P2P discovery
-        console.log('LocalAI not available, using native P2P discovery')
-        this.startNativeP2PDiscovery()
       }
     }
 
@@ -353,16 +354,17 @@ export class DistributedInferenceService {
 
     // Listen for peer events
     this.nativeP2P.on('peer-discovered', (peer: any) => {
-      console.log(`Native P2P: Peer discovered - ${peer.name}`)
+      console.log(`Native P2P: Peer discovered - ${peer.name}`, peer.specs)
       this.peers.set(peer.id, {
         id: peer.id,
         name: peer.name,
         address: peer.address,
         port: peer.port,
         status: 'connected',
-        specs: {
+        specs: peer.specs || {
           cpu: 'Unknown',
           memory: 0,
+          vram: 0,
           gpuLayers: 0
         },
         lastSeen: new Date(),
