@@ -1,13 +1,20 @@
-import { app, BrowserWindow, Menu, ipcMain } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain, dialog } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { config as dotenvConfig } from 'dotenv'
 import { LLMService } from './llm-service.js'
 import { DistributedInferenceService } from './distributed-service.js'
+import { AgentDatabaseService } from './agent-service.js'
+import fs from 'fs/promises'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = process.env.NODE_ENV === 'development'
+
+// Load environment variables from .env file
+dotenvConfig({ path: path.join(__dirname, '../.env') })
 const llmService = new LLMService()
 const distributedService = new DistributedInferenceService(llmService)
+const agentService = new AgentDatabaseService()
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -64,6 +71,302 @@ app.on('window-all-closed', () => {
 if (isDev) {
   Menu.setApplicationMenu(null)
 }
+
+// IPC handler for environment variables
+ipcMain.handle('app:getEnv', async (event, key: string) => {
+  try {
+    return process.env[key] || undefined
+  } catch (error) {
+    console.error('Failed to get environment variable:', error)
+    return undefined
+  }
+})
+
+// IPC handlers for Composio API calls (to avoid CORS issues) - Using v3 API
+ipcMain.handle('composio:createAuthConfig', async (event, data: { toolkit: string, authScheme: string, scopes?: string[] }) => {
+  try {
+    const apiKey = process.env.COMPOSIO_API_KEY
+    if (!apiKey) {
+      return { success: false, error: 'No API key configured' }
+    }
+
+    const https = await import('https')
+    
+    // Build payload for creating auth config using v3 format
+    const requestBody: any = {
+      toolkit: data.toolkit.toUpperCase(),
+      auth_scheme: data.authScheme,
+    }
+    
+    if (data.scopes && data.scopes.length > 0) {
+      requestBody.scopes = data.scopes
+    }
+    
+    const payload = JSON.stringify(requestBody)
+    console.log('[Composio] Creating auth config with payload:', requestBody)
+
+    return new Promise((resolve) => {
+      const req = https.request({
+        hostname: 'backend.composio.dev',
+        path: '/api/v3/auth_configs',
+        method: 'POST',
+        headers: {
+          'X-API-Key': apiKey,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      }, (res) => {
+        let data = ''
+        res.on('data', (chunk) => { data += chunk })
+        res.on('end', () => {
+          console.log('[Composio] Create auth config response:', {
+            statusCode: res.statusCode,
+            bodyLength: data.length,
+            bodyPreview: data.substring(0, 500)
+          })
+          
+          if (!data || data.trim() === '') {
+            console.error('[Composio] Empty response body')
+            resolve({ success: false, error: 'Empty response from Composio API', statusCode: res.statusCode })
+            return
+          }
+          
+          try {
+            const parsed = JSON.parse(data)
+            if (res.statusCode === 200 || res.statusCode === 201) {
+              resolve({ success: true, data: parsed })
+            } else {
+              console.error('[Composio] API error response:', parsed)
+              resolve({ success: false, error: parsed.message || parsed.error || 'API error', statusCode: res.statusCode })
+            }
+          } catch (error) {
+            console.error('[Composio] Failed to parse response:', data)
+            resolve({ success: false, error: 'Failed to parse response: The deployment is currently unavailable', statusCode: res.statusCode })
+          }
+        })
+      })
+
+      req.on('error', (error) => {
+        console.error('[Composio] Request error:', error)
+        resolve({ success: false, error: error.message })
+      })
+
+      req.write(payload)
+      req.end()
+    })
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('composio:getIntegrations', async () => {
+  try {
+    const apiKey = process.env.COMPOSIO_API_KEY
+    if (!apiKey) {
+      return { success: false, error: 'No API key configured' }
+    }
+
+    const https = await import('https')
+    
+    return new Promise((resolve) => {
+      const req = https.request({
+        hostname: 'backend.composio.dev',
+        path: '/api/v3/auth_configs',
+        method: 'GET',
+        headers: {
+          'X-API-Key': apiKey,
+          'Content-Type': 'application/json'
+        }
+      }, (res) => {
+        let data = ''
+        res.on('data', (chunk) => { data += chunk })
+        res.on('end', () => {
+          console.log('[Composio] Auth configs response:', {
+            statusCode: res.statusCode,
+            bodyLength: data.length,
+            bodyPreview: data.substring(0, 500)
+          })
+          
+          if (!data || data.trim() === '') {
+            console.error('[Composio] Empty response body')
+            resolve({ success: false, error: 'Empty response from Composio API', statusCode: res.statusCode })
+            return
+          }
+          
+          try {
+            const parsed = JSON.parse(data)
+            if (res.statusCode === 200) {
+              resolve({ success: true, data: parsed })
+            } else {
+              console.error('[Composio] API error response:', parsed)
+              resolve({ success: false, error: parsed.message || parsed.error || 'API error', statusCode: res.statusCode })
+            }
+          } catch (error) {
+            console.error('[Composio] Failed to parse response:', data)
+            resolve({ success: false, error: 'Failed to parse response: The deployment is currently unavailable', statusCode: res.statusCode })
+          }
+        })
+      })
+
+      req.on('error', (error) => {
+        console.error('[Composio] Request error:', error)
+        resolve({ success: false, error: error.message })
+      })
+
+      req.end()
+    })
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('composio:initiateConnection', async (event, data: { integrationId: string, authConfigId?: string, userId?: string }) => {
+  try {
+    const apiKey = process.env.COMPOSIO_API_KEY
+    if (!apiKey) {
+      return { success: false, error: 'No API key configured' }
+    }
+
+    const https = await import('https')
+    
+    // Require a valid auth config id (ac_...); do NOT fall back to toolkit slug
+    if (!data.authConfigId) {
+      return { success: false, error: `Missing authConfigId for integration '${data.integrationId}'` }
+    }
+
+    // Build payload according to Composio v3 API format
+    const requestBody: any = {
+      user_id: data.userId || 'default-user',
+      auth_config_id: data.authConfigId,
+    }
+    
+    const payload = JSON.stringify(requestBody)
+    console.log('[Composio] Initiating connection with payload:', requestBody)
+
+    return new Promise((resolve) => {
+      const req = https.request({
+        hostname: 'backend.composio.dev',
+        path: '/api/v3/connected_accounts',
+        method: 'POST',
+        headers: {
+          'X-API-Key': apiKey,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      }, (res) => {
+        let data = ''
+        res.on('data', (chunk) => { data += chunk })
+        res.on('end', () => {
+          console.log('[Composio] Initiate connection response:', {
+            statusCode: res.statusCode,
+            headers: res.headers,
+            bodyLength: data.length,
+            bodyPreview: data.substring(0, 500)
+          })
+          
+          // Handle empty response
+          if (!data || data.trim() === '') {
+            console.error('[Composio] Empty response body')
+            resolve({ success: false, error: 'Empty response from Composio API', statusCode: res.statusCode })
+            return
+          }
+          
+          try {
+            const parsed = JSON.parse(data)
+            if (res.statusCode === 200 || res.statusCode === 201) {
+              // v3 API typically returns redirectUri, redirect_url, or redirectUrl
+              const redirectUrl = parsed.redirectUri || parsed.redirect_url || parsed.redirectUrl
+              
+              if (redirectUrl) {
+                resolve({ success: true, data: parsed })
+              } else {
+                console.error('[Composio] No redirect URL in successful response:', parsed)
+                resolve({ success: false, error: 'No redirect URL in response' })
+              }
+            } else {
+              console.error('[Composio] API error response:', parsed)
+              resolve({ success: false, error: parsed.message || parsed.error || 'API error', statusCode: res.statusCode, details: parsed })
+            }
+          } catch (error) {
+            console.error('[Composio] Failed to parse response. Raw data:', data)
+            resolve({ success: false, error: `Failed to parse response: The deployment is currently unavailable`, statusCode: res.statusCode })
+          }
+        })
+      })
+
+      req.on('error', (error) => {
+        console.error('[Composio] Request error:', error)
+        resolve({ success: false, error: error.message })
+      })
+
+      req.write(payload)
+      req.end()
+    })
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('composio:verifyConnection', async (event, connectionId: string) => {
+  try {
+    const apiKey = process.env.COMPOSIO_API_KEY
+    if (!apiKey) {
+      return { success: false, error: 'No API key configured' }
+    }
+
+    const https = await import('https')
+
+    return new Promise((resolve) => {
+      const req = https.request({
+        hostname: 'backend.composio.dev',
+        path: `/api/v3/connected_accounts/${connectionId}`,
+        method: 'GET',
+        headers: {
+          'X-API-Key': apiKey,
+          'Content-Type': 'application/json'
+        }
+      }, (res) => {
+        let data = ''
+        res.on('data', (chunk) => { data += chunk })
+        res.on('end', () => {
+          console.log('[Composio] Verify connection response:', {
+            statusCode: res.statusCode,
+            bodyLength: data.length,
+            bodyPreview: data.substring(0, 500)
+          })
+          
+          if (!data || data.trim() === '') {
+            console.error('[Composio] Empty response body')
+            resolve({ success: false, error: 'Empty response from Composio API', statusCode: res.statusCode })
+            return
+          }
+          
+          try {
+            const parsed = JSON.parse(data)
+            if (res.statusCode === 200) {
+              resolve({ success: true, data: parsed })
+            } else {
+              console.error('[Composio] API error response:', parsed)
+              resolve({ success: false, error: parsed.message || parsed.error || 'API error', statusCode: res.statusCode })
+            }
+          } catch (error) {
+            console.error('[Composio] Failed to parse response:', data)
+            resolve({ success: false, error: 'Failed to parse response: The deployment is currently unavailable', statusCode: res.statusCode })
+          }
+        })
+      })
+
+      req.on('error', (error) => {
+        console.error('[Composio] Request error:', error)
+        resolve({ success: false, error: error.message })
+      })
+
+      req.end()
+    })
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+})
 
 // IPC handlers for model downloading
 ipcMain.handle('model:download', async (event, modelUrl: string, filename: string) => {
@@ -480,6 +783,130 @@ ipcMain.handle('distributed:updateLocalAIConfig', async (event, config) => {
   }
 })
 
+// Agent IPC handlers
+ipcMain.handle('agent:create', async (event, agent) => {
+  try {
+    const newAgent = agentService.createAgent(agent)
+    return { success: true, data: newAgent }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+})
+
+ipcMain.handle('agent:getAll', async () => {
+  try {
+    const agents = agentService.getAllAgents()
+    return { success: true, data: agents }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+})
+
+ipcMain.handle('agent:getById', async (event, id: string) => {
+  try {
+    const agent = agentService.getAgentById(id)
+    return { success: true, data: agent }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+})
+
+ipcMain.handle('agent:update', async (event, id: string, updates) => {
+  try {
+    const updatedAgent = agentService.updateAgent(id, updates)
+    return { success: true, data: updatedAgent }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+})
+
+ipcMain.handle('agent:delete', async (event, id: string) => {
+  try {
+    const success = agentService.deleteAgent(id)
+    return { success, data: success }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+})
+
+ipcMain.handle('agent:uploadFile', async (event, agentId: string) => {
+  try {
+    // Show file picker dialog
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Documents', extensions: ['pdf', 'txt', 'md', 'doc', 'docx'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: 'No files selected' }
+    }
+
+    const files = []
+    for (const filePath of result.filePaths) {
+      const stats = await fs.stat(filePath)
+      const fileName = path.basename(filePath)
+      
+      // Copy file to agent's knowledge base directory
+      const agentFilesDir = path.join(app.getPath('userData'), 'agent-files', agentId)
+      await fs.mkdir(agentFilesDir, { recursive: true })
+      
+      const destPath = path.join(agentFilesDir, fileName)
+      await fs.copyFile(filePath, destPath)
+
+      const agentFile = agentService.addAgentFile(agentId, {
+        fileName,
+        filePath: destPath,
+        fileSize: stats.size,
+        mimeType: getMimeType(fileName)
+      })
+
+      if (agentFile) {
+        files.push(agentFile)
+      }
+    }
+
+    return { success: true, data: files }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+})
+
+ipcMain.handle('agent:getFiles', async (event, agentId: string) => {
+  try {
+    const files = agentService.getAgentFiles(agentId)
+    return { success: true, data: files }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+})
+
+ipcMain.handle('agent:deleteFile', async (event, fileId: string) => {
+  try {
+    const success = agentService.deleteAgentFile(fileId)
+    return { success, data: success }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+})
+
+// Helper function to get MIME type
+function getMimeType(filename: string): string {
+  const ext = path.extname(filename).toLowerCase()
+  const mimeTypes: Record<string, string> = {
+    '.pdf': 'application/pdf',
+    '.txt': 'text/plain',
+    '.md': 'text/markdown',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.csv': 'text/csv',
+    '.json': 'application/json'
+  }
+  return mimeTypes[ext] || 'application/octet-stream'
+}
+
 // Cleanup on app quit
 app.on('before-quit', () => {
   if (llmService) {
@@ -487,5 +914,8 @@ app.on('before-quit', () => {
   }
   if (distributedService) {
     distributedService.dispose()
+  }
+  if (agentService) {
+    agentService.close()
   }
 })

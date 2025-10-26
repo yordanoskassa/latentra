@@ -1,5 +1,6 @@
 export interface IElectronAPI {
   platform: string
+  getEnv?: (key: string) => Promise<string | undefined>
   llm: {
     chat: (message: string) => Promise<{ success: boolean; response?: string; error?: string }>
     getModelInfo: () => Promise<{ 
@@ -94,8 +95,58 @@ export interface IElectronAPI {
   }
 }
 
+export interface Agent {
+  id: string
+  name: string
+  role: string
+  goal: string
+  backstory: string
+  tools: string[]
+  knowledgeBase?: {
+    files: string[]
+    chromaCollectionId?: string
+  }
+  modelConfig?: {
+    model: string
+    temperature: number
+    maxTokens: number
+  }
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AgentFile {
+  id: string
+  agentId: string
+  fileName: string
+  filePath: string
+  fileSize: number
+  mimeType: string
+  uploadedAt: string
+}
+
 declare global {
   interface Window {
     electronAPI: IElectronAPI
+    electron?: {
+      getEnv?: (key: string) => Promise<string | undefined>
+      composio?: {
+        checkHealth: () => Promise<{ success: boolean; available?: boolean; error?: string }>
+        createAuthConfig: (data: { toolkit: string, authScheme: string, scopes?: string[] }) => Promise<{ success: boolean; data?: any; error?: string; statusCode?: number }>
+        getIntegrations: () => Promise<{ success: boolean; data?: any; error?: string }>
+        initiateConnection: (data: { integrationId: string, authConfigId?: string, userId?: string }) => Promise<{ success: boolean; data?: any; error?: string; statusCode?: number }>
+        verifyConnection: (connectionId: string) => Promise<{ success: boolean; data?: any; error?: string; statusCode?: number }>
+      }
+      agent?: {
+        create: (agent: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>) => Promise<{ success: boolean; data?: Agent; error?: string }>
+        getAll: () => Promise<{ success: boolean; data?: Agent[]; error?: string }>
+        getById: (id: string) => Promise<{ success: boolean; data?: Agent | null; error?: string }>
+        update: (id: string, updates: Partial<Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>>) => Promise<{ success: boolean; data?: Agent | null; error?: string }>
+        delete: (id: string) => Promise<{ success: boolean; data?: boolean; error?: string }>
+        uploadFile: (agentId: string) => Promise<{ success: boolean; data?: AgentFile[]; error?: string }>
+        getFiles: (agentId: string) => Promise<{ success: boolean; data?: AgentFile[]; error?: string }>
+        deleteFile: (fileId: string) => Promise<{ success: boolean; data?: boolean; error?: string }>
+      }
+    }
   }
 }

@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
+  getEnv: (key: string) => ipcRenderer.invoke('app:getEnv', key),
   llm: {
     chat: (message: string) => ipcRenderer.invoke('llm:chat', message),
     getModelInfo: () => ipcRenderer.invoke('llm:getModelInfo'),
@@ -37,5 +38,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getP2PToken: () => ipcRenderer.invoke('distributed:getP2PToken'),
     getSwarmInfo: () => ipcRenderer.invoke('distributed:getSwarmInfo'),
     updateLocalAIConfig: (config: any) => ipcRenderer.invoke('distributed:updateLocalAIConfig', config),
+  }
+})
+
+// Also expose a simpler interface for compatibility
+contextBridge.exposeInMainWorld('electron', {
+  getEnv: (key: string) => ipcRenderer.invoke('app:getEnv', key),
+  composio: {
+    checkHealth: () => ipcRenderer.invoke('composio:checkHealth'),
+    createAuthConfig: (data: { toolkit: string, authScheme: string, scopes?: string[] }) => ipcRenderer.invoke('composio:createAuthConfig', data),
+    getIntegrations: () => ipcRenderer.invoke('composio:getIntegrations'),
+    initiateConnection: (data: { integrationId: string, authConfigId?: string, userId?: string }) => ipcRenderer.invoke('composio:initiateConnection', data),
+    verifyConnection: (connectionId: string) => ipcRenderer.invoke('composio:verifyConnection', connectionId)
+  },
+  agent: {
+    create: (agent: any) => ipcRenderer.invoke('agent:create', agent),
+    getAll: () => ipcRenderer.invoke('agent:getAll'),
+    getById: (id: string) => ipcRenderer.invoke('agent:getById', id),
+    update: (id: string, updates: any) => ipcRenderer.invoke('agent:update', id, updates),
+    delete: (id: string) => ipcRenderer.invoke('agent:delete', id),
+    uploadFile: (agentId: string) => ipcRenderer.invoke('agent:uploadFile', agentId),
+    getFiles: (agentId: string) => ipcRenderer.invoke('agent:getFiles', agentId),
+    deleteFile: (fileId: string) => ipcRenderer.invoke('agent:deleteFile', fileId)
   }
 })

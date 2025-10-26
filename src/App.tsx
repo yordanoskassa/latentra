@@ -8,7 +8,9 @@ import { PerformanceSettings } from '@/components/chat/PerformanceSettings'
 import { DistributedSettings } from '@/components/chat/DistributedSettings'
 import { SimpleP2PPage } from '@/components/chat/SimpleP2PPage'
 import { P2PSettings } from '@/components/chat/P2PSettings'
-import { Settings, HardDrive, Brain, Search, MessageSquare, Network } from 'lucide-react'
+import { AgentBuilder } from '@/components/chat/AgentBuilder'
+import { ComposioSettings } from '@/components/chat/ComposioSettings'
+import { Settings, HardDrive, Brain, Search, MessageSquare, Network, Bot, Link as LinkIcon } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 function App() {
@@ -43,12 +45,28 @@ function App() {
               <span className="lowercase">models</span>
             </Button>
             <Button
+              variant={activeTab === 'agents' ? 'default' : 'ghost'}
+              className="w-full justify-start h-10 rounded-xl transition-all duration-200"
+              onClick={() => setActiveTab('agents')}
+            >
+              <Bot className="mr-2 h-4 w-4" />
+              <span className="lowercase">agents</span>
+            </Button>
+            <Button
               variant={activeTab === 'network' ? 'default' : 'ghost'}
               className="w-full justify-start h-10 rounded-xl transition-all duration-200"
               onClick={() => setActiveTab('network')}
             >
               <Network className="mr-2 h-4 w-4" />
               <span className="lowercase">network</span>
+            </Button>
+            <Button
+              variant={activeTab === 'composio' ? 'default' : 'ghost'}
+              className="w-full justify-start h-10 rounded-xl transition-all duration-200"
+              onClick={() => setActiveTab('composio')}
+            >
+              <LinkIcon className="mr-2 h-4 w-4" />
+              <span className="lowercase">composio</span>
             </Button>
             <Button
               variant={activeTab === 'settings' ? 'default' : 'ghost'}
@@ -72,7 +90,9 @@ function App() {
                 <p className="text-muted-foreground lowercase">
                   {activeTab === 'chat' && 'chat with your local ai models'}
                   {activeTab === 'models' && 'browse, download, and manage ai models'}
+                  {activeTab === 'agents' && 'create custom ai assistants for specific tasks'}
                   {activeTab === 'network' && 'share ai power with nearby devices'}
+                  {activeTab === 'composio' && 'manage tool integrations and authentication'}
                   {activeTab === 'settings' && 'configure your llm preferences'}
                 </p>
               </div>
@@ -102,9 +122,21 @@ function App() {
             </div>
           )}
 
+          {activeTab === 'agents' && (
+            <div className="h-[calc(100vh-12rem)] overflow-y-auto">
+              <AgentBuilder />
+            </div>
+          )}
+
           {activeTab === 'network' && (
             <div className="w-full">
               <SimpleP2PPage />
+            </div>
+          )}
+
+          {activeTab === 'composio' && (
+            <div className="h-[calc(100vh-12rem)] overflow-y-auto">
+              <ComposioSettings />
             </div>
           )}
 

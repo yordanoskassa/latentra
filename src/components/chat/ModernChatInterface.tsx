@@ -17,7 +17,15 @@ import {
   AIInputModelSelectContent,
   AIInputModelSelectItem,
 } from '@/components/ui/ai-input'
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select'
 import { NetworkStatus } from './NetworkStatus'
+import { Agent } from '../types/electron'
 
 interface Message {
   id: string
@@ -33,6 +41,8 @@ export function ModernChatInterface() {
   const [modelStatus, setModelStatus] = useState<{ isLoaded: boolean; error?: string }>({ isLoaded: false })
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [selectedModel, setSelectedModel] = useState<string>('')
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -46,7 +56,19 @@ export function ModernChatInterface() {
   useEffect(() => {
     checkModelStatus()
     loadAvailableModels()
+    loadAgents()
   }, [])
+
+  const loadAgents = async () => {
+    try {
+      const result = await window.electron?.agent?.getAll()
+      if (result?.success && result.data) {
+        setAgents(result.data)
+      }
+    } catch (error) {
+      console.error('Failed to load agents:', error)
+    }
+  }
 
   const loadAvailableModels = async () => {
     try {
@@ -161,8 +183,44 @@ export function ModernChatInterface() {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Network Status Bar */}
-      <div className="flex justify-end p-2 border-b bg-background/95">
+      {/* Header with Network Status and Agent Selector */}
+      <div className="flex items-center justify-between gap-4 p-2 border-b bg-background/95">
+        <div className="flex items-center gap-2 flex-1">
+          <Bot className="w-4 h-4 text-muted-foreground" />
+          <Select
+            value={selectedAgent?.id || 'none'}
+            onValueChange={(value) => {
+              if (value === 'none') {
+                setSelectedAgent(null)
+              } else {
+                const agent = agents.find(a => a.id === value)
+                setSelectedAgent(agent || null)
+              }
+            }}
+          >
+            <SelectTrigger className="w-[250px] h-8 text-sm">
+              <SelectValue placeholder="Select an agent (optional)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No Agent (Direct Chat)</SelectItem>
+              {agents.map(agent => (
+                <SelectItem key={agent.id} value={agent.id}>
+                  <div className="flex flex-col">
+                    <span className="font-medium">{agent.name}</span>
+                    <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                      {agent.role}
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedAgent && (
+            <span className="text-xs text-muted-foreground lowercase">
+              • {selectedAgent.tools.length} tools configured
+            </span>
+          )}
+        </div>
         <NetworkStatus />
       </div>
 

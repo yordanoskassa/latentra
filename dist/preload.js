@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
     platform: process.platform,
+    getEnv: (key) => ipcRenderer.invoke('app:getEnv', key),
     llm: {
         chat: (message) => ipcRenderer.invoke('llm:chat', message),
         getModelInfo: () => ipcRenderer.invoke('llm:getModelInfo'),
@@ -37,5 +38,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
         getP2PToken: () => ipcRenderer.invoke('distributed:getP2PToken'),
         getSwarmInfo: () => ipcRenderer.invoke('distributed:getSwarmInfo'),
         updateLocalAIConfig: (config) => ipcRenderer.invoke('distributed:updateLocalAIConfig', config),
+    }
+});
+// Also expose a simpler interface for compatibility
+contextBridge.exposeInMainWorld('electron', {
+    getEnv: (key) => ipcRenderer.invoke('app:getEnv', key),
+    composio: {
+        getIntegrations: () => ipcRenderer.invoke('composio:getIntegrations'),
+        initiateConnection: (data) => ipcRenderer.invoke('composio:initiateConnection', data),
+        verifyConnection: (connectionId) => ipcRenderer.invoke('composio:verifyConnection', connectionId)
+    },
+    agent: {
+        create: (agent) => ipcRenderer.invoke('agent:create', agent),
+        getAll: () => ipcRenderer.invoke('agent:getAll'),
+        getById: (id) => ipcRenderer.invoke('agent:getById', id),
+        update: (id, updates) => ipcRenderer.invoke('agent:update', id, updates),
+        delete: (id) => ipcRenderer.invoke('agent:delete', id),
+        uploadFile: (agentId) => ipcRenderer.invoke('agent:uploadFile', agentId),
+        getFiles: (agentId) => ipcRenderer.invoke('agent:getFiles', agentId),
+        deleteFile: (fileId) => ipcRenderer.invoke('agent:deleteFile', fileId)
     }
 });

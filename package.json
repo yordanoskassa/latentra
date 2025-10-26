@@ -53,6 +53,9 @@
   "dependencies": {
     "@assistant-ui/react": "^0.11.34",
     "@assistant-ui/react-markdown": "^0.11.3",
+    "@composio/core": "^0.2.0",
+    "@langchain/community": "^1.0.0",
+    "@langchain/openai": "^1.0.0",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.0.2",
@@ -62,8 +65,14 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.0.4",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/uuid": "^10.0.0",
+    "better-sqlite3": "^12.4.1",
+    "chromadb": "^3.0.17",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^17.2.3",
+    "langchain": "^1.0.1",
     "lucide-react": "^0.294.0",
     "motion": "^12.23.24",
     "multicast-dns": "^7.2.5",
@@ -73,6 +82,7 @@
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
+    "uuid": "^13.0.0",
     "zustand": "^5.0.8"
   },
   "build": {
