@@ -673,7 +673,7 @@ ipcMain.handle('agent:setCurrentAgent', async (event, agentId) => {
         if (!agent) {
             return { success: false, error: 'Agent not found' };
         }
-        langChainAgentService.setAgent(agent);
+        await langChainAgentService.setAgent(agent);
         return { success: true, data: agent };
     }
     catch (error) {
@@ -750,8 +750,7 @@ ipcMain.handle('llm:getPerformanceProfiles', async () => {
     try {
         const profiles = llmService.getAvailableProfiles();
         const current = llmService.getPerformanceProfile();
-        const config = llmService.getCurrentConfig();
-        return { success: true, profiles, current, config };
+        return { success: true, profiles, current };
     }
     catch (error) {
         console.error('Error getting performance profiles:', error);

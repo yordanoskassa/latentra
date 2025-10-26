@@ -5,7 +5,6 @@ import { config as dotenvConfig } from 'dotenv'
 import { LLMService } from './llm-service.js'
 import { DistributedInferenceService } from './distributed-service.js'
 import { AgentDatabaseService } from './agent-service.js'
-import { LangChainAgentService } from './langchain-agent-service.js'
 import fs from 'fs/promises'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -16,7 +15,6 @@ dotenvConfig({ path: path.join(__dirname, '../.env') })
 const llmService = new LLMService()
 const distributedService = new DistributedInferenceService(llmService)
 const agentService = new AgentDatabaseService()
-const langChainAgentService = new LangChainAgentService()
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -726,58 +724,6 @@ ipcMain.handle('llm:chat', async (event, message: string) => {
     return { success: true, response }
   } catch (error) {
     console.error('Chat error:', error)
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
-  }
-})
-
-// IPC handlers for agent chat
-ipcMain.handle('agent:setCurrentAgent', async (event, agentId: string) => {
-  try {
-    const agent = agentService.getAgentById(agentId)
-    if (!agent) {
-      return { success: false, error: 'Agent not found' }
-    }
-    
-    langChainAgentService.setAgent(agent)
-    return { success: true, data: agent }
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
-  }
-})
-
-ipcMain.handle('agent:chat', async (event, message: string) => {
-  try {
-    const response = await langChainAgentService.chat(message)
-    return { success: true, data: response }
-  } catch (error) {
-    console.error('Agent chat error:', error)
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
-  }
-})
-
-ipcMain.handle('agent:getCurrentAgent', async () => {
-  try {
-    const agent = langChainAgentService.getCurrentAgent()
-    return { success: true, data: agent }
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
-  }
-})
-
-ipcMain.handle('agent:getConversationHistory', async () => {
-  try {
-    const history = langChainAgentService.getConversationHistory()
-    return { success: true, data: history }
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
-  }
-})
-
-ipcMain.handle('agent:clearHistory', async () => {
-  try {
-    langChainAgentService.clearHistory()
-    return { success: true }
-  } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
   }
 })

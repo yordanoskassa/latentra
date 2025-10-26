@@ -14,7 +14,9 @@
     "dist": "npm run download-localai && npm run build && electron-builder",
     "postinstall": "electron-builder install-app-deps",
     "download-model": "node download-model.js",
-    "download-localai": "node scripts/download-localai.js"
+    "download-localai": "node scripts/download-localai.js",
+    "test": "node auto-test.js",
+    "test:peer": "node test-peer.cjs"
   },
   "keywords": [
     "electron",

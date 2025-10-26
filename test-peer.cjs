@@ -5,7 +5,7 @@ const os = require('os')
 
 // Configuration
 const deviceId = 'test-peer-' + Math.random().toString(36).substr(2, 9)
-const deviceName = 'Test-Laptop'
+const deviceName = 'Lenovo'
 const serviceType = '_latentra._tcp.local'
 const apiPort = 3001
 

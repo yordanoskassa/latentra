@@ -38,15 +38,12 @@ export class LangChainAgentService {
     this.llmService = new LLMService()
   }
 
-  setAgent(agent: Agent) {
+  async setAgent(agent: Agent) {
     this.currentAgent = agent
     this.conversationHistory = []
     
-    // Initialize conversation with system prompt - this will be used for LLM context
-    if (agent.backstory) {
-      this.conversationHistory.push({
-        role: 'system',
-        content: `You are ${agent.name}, ${agent.role}.
+    // Build the system prompt for the agent
+    const systemPrompt = `You are ${agent.name}, ${agent.role}.
 
 Background: ${agent.backstory}
 
@@ -61,7 +58,19 @@ Instructions:
 4. If users ask you to perform actions that require tools (like sending emails, scheduling meetings, etc.), let them know you can help with that
 5. Be proactive and suggest related actions that might be helpful
 6. Keep responses concise but friendly`
-      })
+
+    // Initialize conversation with system prompt - this will be used for LLM context
+    this.conversationHistory.push({
+      role: 'system',
+      content: systemPrompt
+    })
+
+    // Update the LLM service's system prompt
+    try {
+      await this.llmService.updateSystemPrompt(systemPrompt)
+      console.log(`Updated LLM system prompt for agent: ${agent.name}`)
+    } catch (error) {
+      console.error('Failed to update LLM system prompt:', error)
     }
   }
 

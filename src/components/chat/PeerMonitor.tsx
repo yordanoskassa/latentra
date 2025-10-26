@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'motion/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Monitor, Wifi, WifiOff, Loader2, CheckCircle, Send } from 'lucide-react'
+import { Monitor, Wifi, WifiOff, Loader2, CheckCircle, Plus, Send } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
@@ -14,7 +14,6 @@ interface PeerDevice {
   specs: {
     cpu?: string
     memory?: number
-    vram?: number
     gpuLayers?: number
   }
   contribution: number
@@ -85,28 +84,6 @@ export function PeerMonitor({ className }: PeerMonitorProps) {
         </div>
       </CardHeader>
       <CardContent>
-        {/* Total Network Stats */}
-        {peers.length > 0 && (
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 p-3">
-              <p className="text-xs text-muted-foreground mb-1">total vram</p>
-              <p className="text-2xl font-bold">
-                {peers.reduce((sum, p) => sum + (p.specs.vram || 0), 0)}GB
-              </p>
-            </div>
-            <div className="rounded-xl bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900 p-3">
-              <p className="text-xs text-muted-foreground mb-1">total memory</p>
-              <p className="text-2xl font-bold">
-                {peers.reduce((sum, p) => sum + (p.specs.memory || 0), 0)}GB
-              </p>
-            </div>
-            <div className="rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900 p-3">
-              <p className="text-xs text-muted-foreground mb-1">devices</p>
-              <p className="text-2xl font-bold">{peers.length}</p>
-            </div>
-          </div>
-        )}
-
         {/* Manual add friend (master address) */}
         <div className="rounded-xl border p-3 mb-4">
           <div className="text-xs text-muted-foreground mb-2">add friend (master relay)</div>
@@ -178,22 +155,22 @@ export function PeerMonitor({ className }: PeerMonitorProps) {
 
                 {/* Peer Stats */}
                 <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-lg bg-muted/50 p-2 text-center">
+                    <p className="text-muted-foreground">contribution</p>
+                    <p className="font-semibold mt-1">{peer.contribution}%</p>
+                  </div>
                   {peer.specs.memory && (
                     <div className="rounded-lg bg-muted/50 p-2 text-center">
                       <p className="text-muted-foreground">memory</p>
                       <p className="font-semibold mt-1">{peer.specs.memory}GB</p>
                     </div>
                   )}
-                  {peer.specs.vram && (
+                  {peer.specs.gpuLayers && (
                     <div className="rounded-lg bg-muted/50 p-2 text-center">
-                      <p className="text-muted-foreground">vram</p>
-                      <p className="font-semibold mt-1">{peer.specs.vram}GB</p>
+                      <p className="text-muted-foreground">gpu layers</p>
+                      <p className="font-semibold mt-1">{peer.specs.gpuLayers}</p>
                     </div>
                   )}
-                  <div className="rounded-lg bg-muted/50 p-2 text-center">
-                    <p className="text-muted-foreground">contribution</p>
-                    <p className="font-semibold mt-1">{peer.contribution}%</p>
-                  </div>
                 </div>
 
                 {/* Last Seen */}

@@ -85,13 +85,12 @@ export class DistributedInferenceService {
 
   private generateDefaultProfile(): UserProfile {
     const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4']
-    const platform = process.platform
     const hostname = os.hostname()
     
     return {
       id: `device-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       displayName: hostname.split('.')[0] || 'Anonymous',
-      deviceName: `${platform} device`,
+      deviceName: 'Lenovo',
       color: colors[Math.floor(Math.random() * colors.length)],
     }
   }

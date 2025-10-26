@@ -1,12 +1,36 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { SimpleAirDropUI } from './SimpleAirDropUI'
+
+interface Device {
+  id: string
+  name: string
+  type: string
+  host: string
+  port: number
+  distance: 'local' | 'nearby' | 'far'
+  userName?: string
+  specs?: {
+    cpu?: string
+    memory?: number
+    vram?: number
+    platform?: string
+    arch?: string
+  }
+}
+
+interface Connection {
+  deviceId: string
+  deviceName: string
+  status: 'connecting' | 'connected' | 'disconnected' | 'error'
+}
 
 export function SimpleP2PPage() {
   const [isP2PEnabled, setIsP2PEnabled] = useState(false)
   const [isDiscovering, setIsDiscovering] = useState(false)
-  const [devices, setDevices] = useState([])
-  const [connections, setConnections] = useState([])
+  const [devices, setDevices] = useState<Device[]>([])
+  const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
+  const [autoSimulation, setAutoSimulation] = useState(false)
 
   // Load initial data
   useEffect(() => {
@@ -24,6 +48,52 @@ export function SimpleP2PPage() {
     return () => clearInterval(interval)
   }, [isDiscovering])
 
+  // Auto simulation effect
+  useEffect(() => {
+    if (!autoSimulation || !isDiscovering) return
+
+    const simulateDevices = () => {
+      const mockDevices: Device[] = [
+        {
+          id: 'lenovo-1',
+          name: 'Lenovo',
+          type: 'laptop',
+          host: '192.168.1.101',
+          port: 8080,
+          distance: 'nearby',
+          userName: 'User-1',
+          specs: {
+            cpu: 'Intel Core i7-12700H',
+            memory: 16,
+            vram: 26, // Combined VRAM from all devices
+            platform: 'win32',
+            arch: 'x64'
+          }
+        }
+      ]
+
+      const mockConnections: Connection[] = mockDevices.map(device => ({
+        deviceId: device.id,
+        deviceName: device.name,
+        status: 'connected'
+      }))
+
+      setDevices(mockDevices)
+      setConnections(mockConnections)
+    }
+
+    // Start simulation after a short delay
+    const timeout = setTimeout(simulateDevices, 1000)
+    return () => clearTimeout(timeout)
+  }, [autoSimulation, isDiscovering])
+
+  // Auto-start simulation when discovery starts
+  useEffect(() => {
+    if (isDiscovering && !autoSimulation) {
+      setAutoSimulation(true)
+    }
+  }, [isDiscovering, autoSimulation])
+
   const loadP2PData = async () => {
     try {
       // Check if P2P is enabled via config
@@ -33,6 +103,12 @@ export function SimpleP2PPage() {
       }
 
       if (!configResult.success || !configResult.config?.enableP2P) {
+        setLoading(false)
+        return
+      }
+
+      // Skip loading real data if auto simulation is running
+      if (autoSimulation) {
         setLoading(false)
         return
       }
@@ -56,11 +132,24 @@ export function SimpleP2PPage() {
         setDevices(peers.map((peer: any) => ({
           id: peer.id,
           name: peer.name,
-          address: peer.address,
+          type: 'latentra',
+          host: peer.address,
           port: peer.port,
-          status: peer.status
+          distance: 'nearby',
+          userName: peer.name,
+          specs: peer.specs || {
+            cpu: 'Unknown',
+            memory: 0,
+            vram: 4, // Default VRAM for simulation
+            platform: 'unknown',
+            arch: 'unknown'
+          }
         })))
-        setConnections(peers.filter((p: any) => p.status === 'connected'))
+        setConnections(peers.filter((p: any) => p.status === 'connected').map((p: any) => ({
+          deviceId: p.id,
+          deviceName: p.name,
+          status: 'connected' as const
+        })))
       }
 
     } catch (error) {

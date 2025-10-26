@@ -1,4 +1,5 @@
 import path from 'path'
+import os from 'os'
 import { app } from 'electron'
 import { LLMConfigManager, type PerformanceProfile } from './llm-config.js'
 
@@ -9,11 +10,17 @@ export class LLMService {
   private session: any = null
   private isInitialized = false
   private modelPath: string | null = null
-  private performanceProfile: PerformanceProfile = 'extreme' // Use maximum performance by default
+  private config: LLMConfigManager
+  private currentSystemPrompt: string = "You are a helpful, friendly AI assistant with personality. Be conversational and natural - like talking to a knowledgeable friend. Show enthusiasm, use casual language when appropriate, and don't be overly formal or robotic. Keep responses concise but engaging. When role-playing as specific agents or characters, fully embody their personality and expertise."
+  private performanceProfile: PerformanceProfile = 'balanced' // Use balanced performance by default
   // Concurrency controls
   private initPromise: Promise<void> | null = null
   private reinitInProgress = false
   private chatLock: Promise<any> = Promise.resolve()
+
+  constructor() {
+    this.config = new LLMConfigManager()
+  }
 
   async findAvailableModel(): Promise<string | null> {
     try {
@@ -57,7 +64,7 @@ export class LLMService {
       }
       
       // Get system capabilities  
-      const memoryGB = Math.round(require('os').totalmem() / (1024 ** 3))
+      const memoryGB = Math.round(os.totalmem() / (1024 ** 3))
       const isAppleSilicon = process.platform === 'darwin' && process.arch === 'arm64'
       
       // Select tier based on system capabilities
@@ -201,17 +208,39 @@ export class LLMService {
           contextSize: config.contextSize
         })
         
-        this.model = await Promise.race([
-          this.llama.loadModel({
-            modelPath: this.modelPath,
-            gpuLayers: config.gpuLayers, // GPU acceleration for Apple Silicon
-            threads: config.threads, // Optimal thread count
-            batchSize: config.batchSize, // Optimized batch size
-          }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Model loading timeout (120s)')), 120000)
-          )
-        ])
+        try {
+          this.model = await Promise.race([
+            this.llama.loadModel({
+              modelPath: this.modelPath,
+              gpuLayers: config.gpuLayers, // GPU acceleration for Apple Silicon
+              threads: config.threads, // Optimal thread count
+              batchSize: config.batchSize, // Optimized batch size
+            }),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Model loading timeout (120s)')), 120000)
+            )
+          ])
+        } catch (error) {
+          // If VRAM error, fallback to CPU-only mode
+          if (error instanceof Error && (error.message.includes('VRAM') || error.message.includes('InsufficientMemoryError'))) {
+            console.warn('VRAM insufficient, falling back to CPU-only mode...')
+            const cpuConfig = LLMConfigManager.getOptimalConfig('cpu-only')
+            this.model = await Promise.race([
+              this.llama.loadModel({
+                modelPath: this.modelPath,
+                gpuLayers: 0, // Force CPU-only
+                threads: cpuConfig.threads,
+                batchSize: cpuConfig.batchSize,
+              }),
+              new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Model loading timeout (120s)')), 120000)
+              )
+            ])
+            console.log('Model loaded successfully in CPU-only mode')
+          } else {
+            throw error
+          }
+        }
         
         const loadTime = ((Date.now() - loadStartTime) / 1000).toFixed(2)
         console.log(`Model loaded in ${loadTime} seconds`)
@@ -234,7 +263,7 @@ export class LLMService {
       const { LlamaChatSession } = await import('node-llama-cpp')
       this.session = new LlamaChatSession({
         contextSequence: this.context.getSequence(),
-        systemPrompt: "You are a helpful, friendly AI assistant with personality. Be conversational and natural - like talking to a knowledgeable friend. Show enthusiasm, use casual language when appropriate, and don't be overly formal or robotic. Keep responses concise but engaging. When role-playing as specific agents or characters, fully embody their personality and expertise."
+        systemPrompt: this.currentSystemPrompt
       })
 
       if (!this.session) {
@@ -448,11 +477,22 @@ export class LLMService {
     return LLMConfigManager.getAvailableProfiles()
   }
 
-  getCurrentConfig() {
-    return LLMConfigManager.getOptimalConfig(this.performanceProfile)
+  async updateSystemPrompt(systemPrompt: string): Promise<void> {
+    this.currentSystemPrompt = systemPrompt
+    
+    // If we have an active session, recreate it with the new system prompt
+    if (this.isInitialized && this.context) {
+      console.log('Updating system prompt and recreating chat session...')
+      const { LlamaChatSession } = await import('node-llama-cpp')
+      this.session = new LlamaChatSession({
+        contextSequence: this.context.getSequence(),
+        systemPrompt: this.currentSystemPrompt
+      })
+      console.log('Chat session updated with new system prompt')
+    }
   }
 
-  dispose() {
+  dispose(): void {
     console.log('Disposing LLM service...')
     this.cleanup()
   }

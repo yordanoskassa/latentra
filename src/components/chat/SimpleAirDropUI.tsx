@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { 
   Wifi, 
@@ -12,6 +12,7 @@ import {
 import { Button } from '../ui/button'
 import { Card, CardContent } from '../ui/card'
 import { Switch } from '../ui/switch'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog'
 
 interface Device {
   id: string
@@ -21,6 +22,13 @@ interface Device {
   port: number
   distance: 'local' | 'nearby' | 'far'
   userName?: string
+  specs?: {
+    cpu?: string
+    memory?: number
+    vram?: number
+    platform?: string
+    arch?: string
+  }
 }
 
 interface Connection {
@@ -69,12 +77,45 @@ export function SimpleAirDropUI({
   onConnectDevice,
   onDisconnectDevice
 }: SimpleAirDropUIProps) {
+  const [showVRAMDialog, setShowVRAMDialog] = useState(false)
+
   const getDeviceStatus = (deviceId: string) => {
     const connection = connections.find(c => c.deviceId === deviceId)
     return connection?.status || 'disconnected'
   }
 
   const connectedCount = connections.filter(c => c.status === 'connected').length
+
+  const calculateCombinedVRAM = () => {
+    const lenovoDevices = devices.filter(device => device.name === 'Lenovo')
+    const connectedLenovoDevices = lenovoDevices.filter(device => 
+      getDeviceStatus(device.id) === 'connected'
+    )
+    
+    const totalVRAM = connectedLenovoDevices.reduce((total, device) => {
+      return total + (device.specs?.vram || 0)
+    }, 0)
+    
+    return {
+      totalVRAM,
+      deviceCount: connectedLenovoDevices.length,
+      devices: connectedLenovoDevices
+    }
+  }
+
+  const handleDeviceClick = (device: Device) => {
+    if (device.name === 'Lenovo') {
+      setShowVRAMDialog(true)
+    } else {
+      // Original connection logic
+      const status = getDeviceStatus(device.id)
+      if (status === 'connected') {
+        onDisconnectDevice(device.id)
+      } else if (status !== 'connecting') {
+        onConnectDevice(device.id)
+      }
+    }
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
@@ -137,13 +178,7 @@ export function SimpleAirDropUI({
                           ? 'ring-2 ring-yellow-400 bg-yellow-50'
                           : 'hover:shadow-lg'
                       }`}
-                      onClick={() => {
-                        if (isConnected) {
-                          onDisconnectDevice(device.id)
-                        } else if (!isConnecting) {
-                          onConnectDevice(device.id)
-                        }
-                      }}
+                      onClick={() => handleDeviceClick(device)}
                     >
                       <CardContent className="p-6 text-center space-y-4">
                         {/* Device Avatar - AirDrop style */}
@@ -234,6 +269,57 @@ export function SimpleAirDropUI({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* VRAM Dialog for Lenovo devices */}
+      <Dialog open={showVRAMDialog} onOpenChange={setShowVRAMDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Lenovo Distributed Computing</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {(() => {
+              const vramInfo = calculateCombinedVRAM()
+              return (
+                <div className="text-center space-y-4">
+                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 p-4 shadow-lg mx-auto">
+                    <Zap className="w-full h-full text-white" />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-semibold">Combined VRAM</h3>
+                    <div className="text-3xl font-bold text-blue-600">
+                      {vramInfo.totalVRAM} GB
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      Across {vramInfo.deviceCount} connected Lenovo device{vramInfo.deviceCount !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+
+                  {vramInfo.devices.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-medium text-gray-700">Device Breakdown:</h4>
+                      <div className="space-y-1">
+                        {vramInfo.devices.map((device, index) => (
+                          <div key={device.id} className="flex justify-between text-sm">
+                            <span>Lenovo #{index + 1}</span>
+                            <span className="font-medium">{device.specs?.vram || 0} GB</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-4">
+                    <Button onClick={() => setShowVRAMDialog(false)} className="w-full">
+                      Close
+                    </Button>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

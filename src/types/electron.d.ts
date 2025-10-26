@@ -125,32 +125,6 @@ export interface AgentFile {
   uploadedAt: string
 }
 
-export interface ToolCall {
-  id: string
-  name: string
-  arguments: Record<string, any>
-}
-
-export interface ToolResult {
-  id: string
-  result: any
-  error?: string
-}
-
-export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system' | 'tool'
-  content: string
-  toolCalls?: ToolCall[]
-  toolResults?: ToolResult[]
-}
-
-export interface AgentResponse {
-  content: string
-  toolCalls?: ToolCall[]
-  needsTools?: boolean
-  finished: boolean
-}
-
 declare global {
   interface Window {
     electronAPI: IElectronAPI
@@ -172,12 +146,6 @@ declare global {
         uploadFile: (agentId: string) => Promise<{ success: boolean; data?: AgentFile[]; error?: string }>
         getFiles: (agentId: string) => Promise<{ success: boolean; data?: AgentFile[]; error?: string }>
         deleteFile: (fileId: string) => Promise<{ success: boolean; data?: boolean; error?: string }>
-        // Agent chat methods
-        setCurrentAgent: (agentId: string) => Promise<{ success: boolean; data?: Agent; error?: string }>
-        chat: (message: string) => Promise<{ success: boolean; data?: AgentResponse; error?: string }>
-        getCurrentAgent: () => Promise<{ success: boolean; data?: Agent | null; error?: string }>
-        getConversationHistory: () => Promise<{ success: boolean; data?: ChatMessage[]; error?: string }>
-        clearHistory: () => Promise<{ success: boolean; error?: string }>
       }
     }
   }
