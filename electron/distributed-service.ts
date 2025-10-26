@@ -1,5 +1,6 @@
 import { LLMService } from './llm-service.js'
 import { LocalAIManager } from './localai-manager.js'
+import { NativeP2PDiscovery } from './native-p2p.js'
 import os from 'os'
 
 export type InferenceMode = 'local' | 'distributed' | 'hybrid'
@@ -61,6 +62,7 @@ export class DistributedInferenceService {
   }
   private localAIManager: LocalAIManager
   private manuallyStopped: boolean = false
+  private nativeP2P?: NativeP2PDiscovery
 
   constructor(llmService: LLMService) {
     this.llmService = llmService
@@ -104,8 +106,8 @@ export class DistributedInferenceService {
     if (status.isRunning) {
       console.log('LocalAI already running, skipping auto-start')
       this.localAIAvailable = true
-    } else if (this.config.enableP2P && status.binaryAvailable && !this.manuallyStopped) {
-      // Auto-start LocalAI if P2P is enabled, binary available, and not manually stopped
+    } else if (this.config.enableP2P && !this.manuallyStopped) {
+      // Auto-start LocalAI (will try WSL on Windows if native binary not available)
       try {
         console.log('Auto-starting LocalAI...')
         await this.localAIManager.start()
@@ -113,6 +115,7 @@ export class DistributedInferenceService {
         console.log('✓ LocalAI started successfully')
       } catch (error) {
         console.error('Failed to auto-start LocalAI:', error)
+        console.error('Error details:', error)
         // Fall back to checking if it's already running
         this.localAIAvailable = await this.checkLocalAI()
       }
@@ -125,13 +128,21 @@ export class DistributedInferenceService {
 
     // Start peer discovery if P2P is enabled
     if (this.config.enableP2P) {
-      this.startPeerDiscovery()
+      if (this.localAIAvailable) {
+        // Use LocalAI P2P
+        this.startPeerDiscovery()
+      } else {
+        // Use native mDNS P2P discovery
+        console.log('LocalAI not available, using native P2P discovery')
+        this.startNativeP2PDiscovery()
+      }
     }
 
     console.log('Distributed service initialized:', {
       mode: this.config.mode,
       localAIAvailable: this.localAIAvailable,
       p2pEnabled: this.config.enableP2P,
+      nativeP2PEnabled: !!this.nativeP2P,
       userProfile: this.config.userProfile,
       localAIStatus: this.localAIManager.getStatus()
     })
@@ -331,6 +342,42 @@ export class DistributedInferenceService {
     }
   }
 
+  private startNativeP2PDiscovery(): void {
+    console.log('Starting native mDNS P2P discovery...')
+    
+    this.nativeP2P = new NativeP2PDiscovery(
+      this.config.userProfile.id,
+      this.config.userProfile.displayName,
+      8080 // API port
+    )
+
+    // Listen for peer events
+    this.nativeP2P.on('peer-discovered', (peer: any) => {
+      console.log(`Native P2P: Peer discovered - ${peer.name}`)
+      this.peers.set(peer.id, {
+        id: peer.id,
+        name: peer.name,
+        address: peer.address,
+        port: peer.port,
+        status: 'connected',
+        specs: {
+          cpu: 'Unknown',
+          memory: 0,
+          gpuLayers: 0
+        },
+        lastSeen: new Date(),
+        contribution: 0
+      })
+    })
+
+    this.nativeP2P.on('peer-lost', (peer: any) => {
+      console.log(`Native P2P: Peer lost - ${peer.name}`)
+      this.peers.delete(peer.id)
+    })
+
+    this.nativeP2P.start()
+  }
+
   // Public API for UI
   
   getConfig(): DistributedConfig {
@@ -486,6 +533,13 @@ export class DistributedInferenceService {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval)
     }
+    
+    // Stop native P2P if running
+    if (this.nativeP2P) {
+      this.nativeP2P.stop()
+      this.nativeP2P = undefined
+    }
+    
     this.peers.clear()
     this.metricsHistory = []
     this.currentRequest = undefined

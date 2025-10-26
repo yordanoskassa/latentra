@@ -14,6 +14,7 @@ interface LocalAIStatus {
     p2pPort: number
     modelsPath: string
   }
+  usingWSL?: boolean
 }
 
 export function LocalAIControl() {
@@ -121,7 +122,7 @@ export function LocalAIControl() {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Status Check */}
-        {!status.binaryAvailable && (
+        {!status.binaryAvailable && !status.usingWSL && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -134,7 +135,28 @@ export function LocalAIControl() {
                   localai binary not found
                 </p>
                 <p className="text-xs text-yellow-700 mt-1">
-                  run <code className="bg-yellow-100 px-1.5 py-0.5 rounded">npm run download-localai</code> to download the binary
+                  on windows, wsl will be used automatically if available
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+        
+        {/* WSL Status */}
+        {status.usingWSL && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl bg-blue-50 border border-blue-200 p-4"
+          >
+            <div className="flex items-start gap-3">
+              <CheckCircle className="h-5 w-5 text-blue-600 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-blue-900">
+                  running via wsl
+                </p>
+                <p className="text-xs text-blue-700 mt-1">
+                  using linux subsystem for windows compatibility
                 </p>
               </div>
             </div>
@@ -178,7 +200,7 @@ export function LocalAIControl() {
               >
                 <Button
                   onClick={handleStart}
-                  disabled={!status.binaryAvailable || isLoading}
+                  disabled={isLoading}
                   className="w-full rounded-xl"
                 >
                   {isLoading && action === 'start' ? (

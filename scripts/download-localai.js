@@ -14,7 +14,7 @@ import { dirname } from 'path'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-const LOCALAI_VERSION = 'v2.24.1' // Update as needed
+const LOCALAI_VERSION = 'v2.21.1' // Update as needed - v2.24.1 doesn't have Windows binary
 const BINARIES_DIR = path.join(__dirname, '..', 'resources', 'bin')
 
 const DOWNLOAD_URLS = {

@@ -2,6 +2,7 @@ import { ChildProcess, spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
 import { app } from 'electron'
+import { WSLManager } from './wsl-manager.js'
 
 export type LocalAIMode = 'standalone' | 'federated' | 'worker'
 
@@ -20,6 +21,8 @@ export class LocalAIManager {
   private binaryPath: string
   private isRunning = false
   private startupPromise?: Promise<void>
+  private wslManager?: WSLManager
+  private usingWSL = false
 
   constructor(config?: Partial<LocalAIConfig>) {
     this.config = {
@@ -82,8 +85,14 @@ export class LocalAIManager {
   }
 
   private async _start(): Promise<void> {
+    // Check if native binary is available
     if (!this.isBinaryAvailable()) {
-      throw new Error(`LocalAI binary not found at: ${this.binaryPath}`)
+      // On Windows, try WSL fallback automatically
+      if (process.platform === 'win32') {
+        console.log('Native LocalAI binary not found, attempting WSL fallback...')
+        return this._startViaWSL()
+      }
+      throw new Error(`LocalAI binary not found at: ${this.binaryPath}. To use distributed inference on Windows, please install WSL and enable it manually in settings.`)
     }
 
     // Ensure models directory exists
@@ -191,6 +200,108 @@ export class LocalAIManager {
     })
   }
 
+  private async _startViaWSL(): Promise<void> {
+    if (!this.wslManager) {
+      this.wslManager = new WSLManager()
+    }
+
+    // Check if WSL is available
+    const wslAvailable = await this.wslManager.checkWSLAvailability()
+    if (!wslAvailable) {
+      throw new Error('WSL is not available. Please install WSL2 or download the native LocalAI binary.')
+    }
+
+    console.log('Using WSL to run LocalAI...')
+
+    // Setup LocalAI in WSL (download if needed)
+    const setupSuccess = await this.wslManager.setupLocalAI()
+    if (!setupSuccess) {
+      throw new Error('Failed to setup LocalAI in WSL')
+    }
+
+    // Sync models to WSL
+    try {
+      await this.wslManager.syncModelsToWSL(this.config.modelsPath)
+    } catch (error) {
+      console.warn('Failed to sync models to WSL, continuing anyway:', error)
+    }
+
+    // Start LocalAI via WSL
+    const process = await this.wslManager.startLocalAI({
+      port: this.config.port,
+      p2pPort: this.config.p2pPort,
+      modelsPath: this.config.modelsPath,
+      mode: this.config.mode,
+      token: this.config.token
+    })
+
+    if (!process) {
+      throw new Error('Failed to start LocalAI process via WSL')
+    }
+
+    this.process = process
+
+    this.usingWSL = true
+
+    // Wait for startup with same logic as native
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('LocalAI startup timeout (WSL)'))
+      }, 60000) // 60 seconds for WSL (might need to download)
+
+      let output = ''
+
+      const handleOutput = (data: Buffer) => {
+        const text = data.toString()
+        output += text
+        console.log('[LocalAI/WSL]', text.trim())
+
+        // Look for startup indicators
+        if (text.includes('Starting LocalAI') || 
+            text.includes('Listening on') ||
+            text.includes('API Server listening')) {
+          clearTimeout(timeout)
+          this.isRunning = true
+          console.log('✓ LocalAI started successfully via WSL')
+          resolve()
+        }
+      }
+
+      this.process!.stdout?.on('data', handleOutput)
+      this.process!.stderr?.on('data', handleOutput)
+
+      this.process!.on('error', (error) => {
+        clearTimeout(timeout)
+        console.error('LocalAI process error (WSL):', error)
+        this.isRunning = false
+        reject(error)
+      })
+
+      this.process!.on('exit', (code, signal) => {
+        clearTimeout(timeout)
+        this.isRunning = false
+        console.log(`LocalAI process exited (WSL) with code ${code}, signal ${signal}`)
+        
+        if (code !== 0 && code !== null) {
+          reject(new Error(`LocalAI exited with code ${code} (WSL)`))
+        }
+      })
+
+      // If we don't see startup message within 10 seconds, check if it's accessible
+      setTimeout(async () => {
+        if (!this.isRunning && this.process && !this.process.killed) {
+          const running = await this.wslManager!.isLocalAIRunning(this.config.port)
+          if (running) {
+            clearTimeout(timeout)
+            this.isRunning = true
+            console.log('✓ LocalAI is accessible via WSL')
+            resolve()
+          }
+        }
+      }, 10000)
+    })
+  }
+
   async stop(): Promise<void> {
     if (!this.process || !this.isRunning) {
       return
@@ -224,12 +335,14 @@ export class LocalAIManager {
     binaryAvailable: boolean
     binaryPath: string
     config: LocalAIConfig
+    usingWSL: boolean
   } {
     return {
       isRunning: this.isRunning,
       binaryAvailable: this.isBinaryAvailable(),
       binaryPath: this.binaryPath,
-      config: this.config
+      config: this.config,
+      usingWSL: this.usingWSL
     }
   }
 
@@ -296,5 +409,40 @@ export class LocalAIManager {
     await new Promise(resolve => setTimeout(resolve, 1000))
     await this.start()
   }
+
+  async startViaWSL(): Promise<void> {
+    if (this.isRunning) {
+      console.log('LocalAI is already running')
+      return
+    }
+
+    if (this.startupPromise) {
+      return this.startupPromise
+    }
+
+    this.startupPromise = this._startViaWSL()
+    try {
+      await this.startupPromise
+    } finally {
+      this.startupPromise = undefined
+    }
+  }
+
+  async checkWSL(): Promise<{ available: boolean; error?: string }> {
+    if (!this.wslManager) {
+      this.wslManager = new WSLManager()
+    }
+
+    const available = await this.wslManager.checkWSLAvailability()
+    if (!available) {
+      return {
+        available: false,
+        error: 'WSL not available or no Linux distribution installed. Run: wsl --install -d Ubuntu'
+      }
+    }
+
+    return { available: true }
+  }
 }
+
 

@@ -125,13 +125,14 @@ export function P2PSettings() {
           </div>
 
           {/* Quick Actions */}
-          {!localAIStatus.isRunning && localAIStatus.binaryAvailable && (
+          {!localAIStatus.isRunning && (
             <div className="p-4 bg-green-50 rounded-lg">
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="font-medium lowercase text-green-900">start compute sharing</h4>
                   <p className="text-sm text-green-700 lowercase">
                     share your device's ai power with peers
+                    {!localAIStatus.binaryAvailable && ' (will use wsl on windows)'}
                   </p>
                 </div>
                 <Button size="sm" onClick={handleStartLocalAI} className="lowercase bg-green-600 hover:bg-green-700">
