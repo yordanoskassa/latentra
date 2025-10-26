@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react'
 import { motion } from 'motion/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Monitor, Wifi, WifiOff, Loader2, CheckCircle } from 'lucide-react'
+import { Monitor, Wifi, WifiOff, Loader2, CheckCircle, Plus, Send } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 interface PeerDevice {
   id: string
@@ -25,6 +27,8 @@ interface PeerMonitorProps {
 export function PeerMonitor({ className }: PeerMonitorProps) {
   const [peers, setPeers] = useState<PeerDevice[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [manualAddress, setManualAddress] = useState('')
+  const [testMessage, setTestMessage] = useState('hello from peer ui')
 
   useEffect(() => {
     loadPeers()
@@ -45,6 +49,27 @@ export function PeerMonitor({ className }: PeerMonitorProps) {
     }
   }
 
+  // Add a friend (manual master address) and send a ping chat to test relay
+  const testRelay = async () => {
+    if (!manualAddress) return
+    try {
+      const url = manualAddress.endsWith('/') ? manualAddress.slice(0, -1) : manualAddress
+      const res = await fetch(`${url}/api/relay/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: testMessage || 'hello' })
+      })
+      const data = await res.json()
+      if (data?.success) {
+        alert('relay success: ' + (data.response || 'ok'))
+      } else {
+        alert('relay failed: ' + (data?.error || 'unknown'))
+      }
+    } catch (err: any) {
+      alert('relay error: ' + (err?.message || 'unknown'))
+    }
+  }
+
   return (
     <Card className={`rounded-xl ${className}`}>
       <CardHeader>
@@ -59,6 +84,27 @@ export function PeerMonitor({ className }: PeerMonitorProps) {
         </div>
       </CardHeader>
       <CardContent>
+        {/* Manual add friend (master address) */}
+        <div className="rounded-xl border p-3 mb-4">
+          <div className="text-xs text-muted-foreground mb-2">add friend (master relay)</div>
+          <div className="flex gap-2">
+            <Input 
+              placeholder="http://<master-ip>:5123"
+              value={manualAddress}
+              onChange={(e) => setManualAddress(e.target.value)}
+              className="rounded-xl"
+            />
+            <Input 
+              placeholder="test message"
+              value={testMessage}
+              onChange={(e) => setTestMessage(e.target.value)}
+              className="rounded-xl"
+            />
+            <Button variant="outline" onClick={testRelay} className="rounded-xl" title="send test">
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

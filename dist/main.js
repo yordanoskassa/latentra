@@ -57,6 +57,8 @@ app.whenReady().then(async () => {
         if (BrowserWindow.getAllWindows().length === 0)
             createWindow();
     });
+    // Start lightweight relay server for peer UI -> master inference
+    startRelayServer();
 });
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin')
@@ -64,6 +66,69 @@ app.on('window-all-closed', () => {
 });
 if (isDev) {
     Menu.setApplicationMenu(null);
+}
+// Simple relay HTTP server to allow other devices to call this device for inference
+// Exposes:
+//  - GET /health -> { ok: true }
+//  - POST /api/relay/chat { message } -> { success, response }
+async function startRelayServer() {
+    try {
+        const http = await import('http');
+        const relayPort = Number(process.env.RELAY_PORT || 5123);
+        const server = http.createServer(async (req, res) => {
+            // Basic CORS for convenience
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+            if (req.method === 'OPTIONS') {
+                res.writeHead(204);
+                res.end();
+                return;
+            }
+            if (req.method === 'GET' && req.url === '/health') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true }));
+                return;
+            }
+            if (req.method === 'POST' && req.url === '/api/relay/chat') {
+                try {
+                    let body = '';
+                    req.on('data', chunk => { body += chunk; });
+                    req.on('end', async () => {
+                        try {
+                            const parsed = JSON.parse(body || '{}');
+                            const message = parsed.message || '';
+                            if (!message) {
+                                res.writeHead(400, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ success: false, error: 'Missing message' }));
+                                return;
+                            }
+                            const result = await llmService.chat(message);
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ success: true, response: result }));
+                        }
+                        catch (err) {
+                            res.writeHead(500, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ success: false, error: err?.message || 'Unknown error' }));
+                        }
+                    });
+                }
+                catch (error) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: false, error: error?.message || 'Unknown error' }));
+                }
+                return;
+            }
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Not Found' }));
+        });
+        server.listen(relayPort, () => {
+            console.log(`Relay server listening on http://0.0.0.0:${relayPort}`);
+        });
+    }
+    catch (error) {
+        console.error('Failed to start relay server:', error);
+    }
 }
 // IPC handler for environment variables
 ipcMain.handle('app:getEnv', async (event, key) => {
@@ -239,11 +304,15 @@ ipcMain.handle('composio:initiateConnection', async (event, data) => {
         if (!data.authConfigId) {
             return { success: false, error: `Missing authConfigId for integration '${data.integrationId}'` };
         }
-        // Build payload according to Composio v3 API format
+        // Build payload according to Composio v3 API format (nested objects)
         const requestBody = {
-            user_id: data.userId || 'default-user',
-            auth_config_id: data.authConfigId,
+            auth_config: { id: data.authConfigId },
+            connection: { user_id: data.userId || 'default-user' },
         };
+        // Pass auth scheme when provided (OAuth2, API_KEY, etc.)
+        if (data.authScheme) {
+            requestBody.config = { auth_scheme: data.authScheme };
+        }
         const payload = JSON.stringify(requestBody);
         console.log('[Composio] Initiating connection with payload:', requestBody);
         return new Promise((resolve) => {
