@@ -246,7 +246,7 @@ ipcMain.handle('composio:getIntegrations', async () => {
   }
 })
 
-ipcMain.handle('composio:initiateConnection', async (event, data: { integrationId: string, authConfigId?: string, userId?: string }) => {
+ipcMain.handle('composio:initiateConnection', async (event, data: { integrationId: string, authConfigId?: string, userId?: string, authScheme?: string }) => {
   try {
     const apiKey = process.env.COMPOSIO_API_KEY
     if (!apiKey) {
@@ -260,10 +260,14 @@ ipcMain.handle('composio:initiateConnection', async (event, data: { integrationI
       return { success: false, error: `Missing authConfigId for integration '${data.integrationId}'` }
     }
 
-    // Build payload according to Composio v3 API format
+    // Build payload according to Composio v3 API format (nested objects)
     const requestBody: any = {
-      user_id: data.userId || 'default-user',
-      auth_config_id: data.authConfigId,
+      auth_config: { id: data.authConfigId },
+      connection: { user_id: data.userId || 'default-user' },
+    }
+    // Pass auth scheme when provided (OAuth2, API_KEY, etc.)
+    if (data.authScheme) {
+      requestBody.config = { auth_scheme: data.authScheme }
     }
     
     const payload = JSON.stringify(requestBody)

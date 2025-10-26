@@ -134,7 +134,7 @@ declare global {
         checkHealth: () => Promise<{ success: boolean; available?: boolean; error?: string }>
         createAuthConfig: (data: { toolkit: string, authScheme: string, scopes?: string[] }) => Promise<{ success: boolean; data?: any; error?: string; statusCode?: number }>
         getIntegrations: () => Promise<{ success: boolean; data?: any; error?: string }>
-        initiateConnection: (data: { integrationId: string, authConfigId?: string, userId?: string }) => Promise<{ success: boolean; data?: any; error?: string; statusCode?: number }>
+        initiateConnection: (data: { integrationId: string, authConfigId?: string, userId?: string, authScheme?: string }) => Promise<{ success: boolean; data?: any; error?: string; statusCode?: number; details?: any }>
         verifyConnection: (connectionId: string) => Promise<{ success: boolean; data?: any; error?: string; statusCode?: number }>
       }
       agent?: {

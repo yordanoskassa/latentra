@@ -169,14 +169,14 @@ export function ToolRouterManager({ selectedTools, onToolsChange, composioApiKey
             // Update the toolkit object for the connection attempt
             toolkit.authConfigId = authConfigId
           } else {
-            const errorMsg = typeof createResult?.error === 'string' ? createResult.error : 
-                           createResult?.error?.message || 'Unknown error'
+            const anyErr: any = createResult?.error as any
+            const errorMsg = typeof anyErr === 'string' ? anyErr : (anyErr && anyErr.message) || 'Unknown error'
             throw new Error(`Failed to create auth config: ${errorMsg}`)
           }
         }
         
         // Validate the auth config ID format
-        if (!toolkit.authConfigId.startsWith('ac_')) {
+        if (!toolkit.authConfigId || !toolkit.authConfigId.startsWith('ac_')) {
           throw new Error(`Invalid auth config ID format for ${toolkit.name}. Expected format: ac_xxxxx`)
         }
         
@@ -185,7 +185,8 @@ export function ToolRouterManager({ selectedTools, onToolsChange, composioApiKey
         const result = await window.electron?.composio?.initiateConnection({
           integrationId: toolkit.id,
           authConfigId: toolkit.authConfigId || undefined,
-          userId: 'default-user'
+          userId: 'default-user',
+          authScheme: toolkit.authType
         })
         
         if (result?.success && result.data) {
@@ -209,17 +210,18 @@ export function ToolRouterManager({ selectedTools, onToolsChange, composioApiKey
             throw new Error('No redirect URL in response')
           }
         } else {
-          console.error('Composio API error:', result?.error, result?.statusCode, result?.details)
+          console.error('Composio API error:', (result as any)?.error, (result as any)?.statusCode, (result as any)?.details)
           
           // Handle different error message formats
           let errorMessage = 'Failed to initiate connection'
-          if (result?.error) {
-            if (typeof result.error === 'string') {
-              errorMessage = result.error
-            } else if (result.error.message) {
-              errorMessage = result.error.message
+          if ((result as any)?.error) {
+            const r: any = result as any
+            if (typeof r.error === 'string') {
+              errorMessage = r.error
+            } else if (r.error && r.error.message) {
+              errorMessage = r.error.message
             } else {
-              errorMessage = JSON.stringify(result.error)
+              errorMessage = JSON.stringify(r.error)
             }
           }
           
